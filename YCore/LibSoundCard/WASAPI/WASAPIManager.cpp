@@ -1,5 +1,4 @@
 #include"WASAPIManager.h"
-#include <comutil.h>
 
 #include<initguid.h>
 #include<mmdeviceapi.h>
@@ -7,10 +6,7 @@
 #include <endpointvolume.h>
 #include<Audioclient.h>
 #include<Functiondiscoverykeys_devpkey.h>
-
-#ifdef _MSC_VER
-	#pragma comment(lib, "comsuppw.lib")
-#endif
+#include"../../Encoding.h"
 
 std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD dwMask)
 {
@@ -82,7 +78,7 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 
 		wchar_t* pDevId;
 		hr = pDevice->GetId(&pDevId);
-		info.id = std::string(_bstr_t(pDevId));  //转换为短字符串
+		info.id = Encoding::UTF162UTF8(pDevId);  //转换为utf8字符串
 		CoTaskMemFree(pDevId);
 
 		IPropertyStore* pProperty = nullptr;
@@ -93,7 +89,7 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 		hr = pProperty->GetValue(PKEY_Device_FriendlyName, &varName);
 		if (SUCCEEDED(hr) && varName.vt != VT_EMPTY)
 		{
-			info.frindlyName= std::string(_bstr_t(varName.pwszVal));  //转换为短字符串
+			info.frindlyName = Encoding::UTF162UTF8(varName.pwszVal);  //转换为utf8字符串
 		}
 		PropVariantClear(&varName);
 

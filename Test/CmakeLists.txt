@@ -1,0 +1,23 @@
+
+
+
+
+
+set(DLLName dllTest)
+set(TestName Test)
+
+#创建exe
+add_executable(${TestName} Test.cpp)
+target_link_libraries(${TestName} PRIVATE ${LIBNAME})
+
+
+#创建dll
+add_library(${DLLName} SHARED DllTest.cpp)
+target_link_libraries(${DLLName} PRIVATE ${LIBNAME})
+if(MINGW)
+    target_link_options(${DLLName} PRIVATE 
+        -static 
+        -static-libgcc 
+        -static-libstdc++
+    )
+endif()

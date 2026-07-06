@@ -1,11 +1,12 @@
 
 #define _USE_MATH_DEFINES
 #include<algorithm>
-#include"StepSweep.h"
+#include"SweepTest.h"
+#include<stdexcept>
 #include<string>
-#include<sstream>
 #include<vector>
 #include<cmath>
+#include<print>
 
 #include"FindDelay.h"
 #include"Harmonic.h"
@@ -64,7 +65,7 @@ vector<double> StepSweep::GenerateSweepFreq(double startHz, double stopHz, Octav
 	int exp = int(log10(start));  //起始频率计算映射后的值
 	double rate = pow(10, exp);
 	double freq = start / rate;   //起始频率
-	auto iter = std::lower_bound(R80.begin(), R80.end(), freq);
+	auto iter = std::lower_bound(R80.begin(), R80.end(), static_cast<float>(freq));
 	int offset = std::distance(R80.begin(), iter);
 
 	int k = offset % interval;
@@ -158,19 +159,15 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 	vector<double> wavedata;
 	double Q = 0;
 
-	std::stringstream fmt;
 	for (auto const& info : infos)
 	{
 		for (int j = 0; j < info.sampleNum; j++)
 		{
-			fmt.clear();
 			double t = 1.0 * j * info.freq / SampleRate + Q;
 			double val = sin(2 * M_PI * t);
 			wavedata.push_back(val);
-			//Msg =" Freq: "+to_string(info.freq)+" index: "+ to_string(j)+ "Time: " + to_string(t) + " val: " + to_string(val) + " Q: " + to_string(Q);
-			fmt << "Freq: " << info.freq << " index: " << j << " Time: " << t << " val: " << val << " Q: " << Q;
-			//logger.Debug(fmt.str());
-			fmt.str("");
+			string log = std::format("Freq: {} index: {} Time: {} val: {} Q: {}", info.freq, j, t, val, Q);
+			std::println("{}", log);
 		}
 
 		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
@@ -370,7 +367,7 @@ void StepSweep::sweepTest(vector<float> data)
 
 		harm.baseFreq = info.freq;
 		harm.order = harmOrder;
-		harm.arr = new double[harmOrder];
+		harm.values.resize(harmOrder);
 
 		//计算指定阶数的谐波
 		for (int i = 0; i < harmOrder; i++)
