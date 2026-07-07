@@ -46,6 +46,7 @@ private:
 	IAudioCaptureClient* pCaptureClient = nullptr;
 	WaveFormat waveFormat;
 	HANDLE hEvent = nullptr;
+	HANDLE hExit = nullptr;
 	STAFuture captureFuture;
 	
 	long latencyMills = 100;

@@ -11,7 +11,9 @@ static long ReftimesPerSec = 10000000;
 static long ReftimesPerMillisec = 10000;
 
 WASAPIRender::WASAPIRender()
-{}
+{
+
+}
 
 WASAPIRender::~WASAPIRender()
 {
@@ -19,6 +21,11 @@ WASAPIRender::~WASAPIRender()
 	{
 		(void)this->stopPlay();  //丢弃返回值
 		this->renderFuture.wait();
+
+				CloseHandle(this->hEvent);
+		CloseHandle(this->hExit);
+		this->hEvent = NULL;
+		this->hExit = NULL;
 	}
 }
 
@@ -28,6 +35,20 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 	IMMDeviceCollection* pCollection;
 	IMMDeviceEnumerator* pEnumerator;
 	HRESULT hr;
+
+	//无安全属性，手动重置 初始无信号
+	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (this->hEvent == INVALID_HANDLE_VALUE)
+	{
+		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+	}
+	this->hExit = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (this->hExit == INVALID_HANDLE_VALUE)
+	{
+		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+	}
+
+
 
 	const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
 	const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
@@ -62,12 +83,6 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 
 	long hnsBufferDuration = this->latencyMills * 10000L;
 	long hnsPeriodicity = 0;
-
-	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	if (hEvent == INVALID_HANDLE_VALUE)
-	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
-	}
 
 	WAVEFORMATEX fmtEx = this->waveFormat.toWaveFormatEx();
 	int streamFlags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY | AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
@@ -141,6 +156,9 @@ STAType WASAPIRender::doPlay()
 		return result;
 	}
 
+	ResetEvent(this->hEvent);  //重置事件
+	ResetEvent(this->hExit);  //重置事件
+
 	hr = pAudioClient->Start();
 	if (FAILED(hr))
 	{
@@ -149,16 +167,34 @@ STAType WASAPIRender::doPlay()
 	this->playbackState = PlaybackState::Playing;
 	long numFramesPadding;
 
+	long actualDuration = (long)((double)ReftimesPerSec *
+		this->bufferFrameSize / this->waveFormat.getSampleRate());
+	int waitMilliseconds = (int)(actualDuration / ReftimesPerMillisec);
+
+	HANDLE handles[2] = { this->hEvent, this->hExit };
 	while (this->playbackState == PlaybackState::Playing)
 	{
-		DWORD ret = WaitForSingleObject(hEvent, 1000);
-		if (ret != WAIT_OBJECT_0)  
-		{
-			break;
+		DWORD dwSignalledIndex;
+		hr = CoWaitForMultipleHandles(
+					COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
+					waitMilliseconds,  // 超时时间：无限超时
+					2,                 // 句柄数量
+					handles,     // 句柄数组
+					&dwSignalledIndex  // 输出：触发返回的句柄索引
+				);
+
+		if (hr == S_OK) {
+			if(dwSignalledIndex == 0)  //信号事件
+			{
+				ResetEvent(this->hEvent);  //重置事件
+			}else if(dwSignalledIndex == 1)  //退出事件
+			{
+				break;
+			}
 		}
 
-		UINT32 numFramesPadding;
 
+		UINT32 numFramesPadding;
 		hr = this->pAudioClient->GetCurrentPadding(&numFramesPadding);
 		if (FAILED(hr))
 		{
@@ -280,6 +316,7 @@ std::expected<void, std::string> WASAPIRender::stopPlay()
 	if (this->playbackState != PlaybackState::Stopped && this->playbackState != PlaybackState::Stopping)
 	{
 		this->playbackState = PlaybackState::Stopping; //标记为停止中
+		SetEvent(this->hExit);  //触发退出事件
 	}
 	return std::expected<void, std::string>();
 }

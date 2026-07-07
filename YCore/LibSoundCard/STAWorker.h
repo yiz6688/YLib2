@@ -7,7 +7,7 @@
 #include<string>
 #include<atomic>
 #include<functional>
-
+#include<windows.h>
 
 using STAType = std::expected<void, std::string>;
 using STAFunc = std::function<STAType()>;
@@ -41,7 +41,7 @@ public:
 
 private:
     std::mutex mtx;
-    std::condition_variable cv;
+    HANDLE hEvent;
     std::future<long> fu;
     std::queue<STATask> taskLsts;
     bool flag = true;

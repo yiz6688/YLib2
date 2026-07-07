@@ -371,7 +371,52 @@ int WaveRingTest()
 #include"../YCore/LibSoundCard/WASAPI/WASAPIManager.h"
 int main()
 {
+	//参数1 安全属性  参数2 复位方式 参数3 初始状态  参数4 名称
+	HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	bool flag = true;
 
+	std::future<void> fu1 = std::async(std::launch::async, [&hEvent, &flag]()
+		{
+			std::println("进入异步线程");
+			while(flag)
+			{
+				DWORD result = WaitForSingleObject(hEvent, INFINITE);
+				if (result == WAIT_OBJECT_0)
+				{
+					println("信号触发");
+				}
+				else
+				{
+					println("等待失败");
+				}
+			}
+			std::println("异步线程退出");
+		});
+
+
+	Sleep(1000);
+	println("设置信号1");
+	SetEvent(hEvent);
+	Sleep(2000);
+	println("设置信号2");
+	SetEvent(hEvent);
+	Sleep(3000);
+	println("设置信号3");
+	SetEvent(hEvent);
+
+	Sleep(1000);
+
+	println("退出异步线程");
+	flag = false;
+	SetEvent(hEvent);
+	fu1.wait();
+
+	std::println("测试输出");
+
+
+
+
+	return 0;
 	auto lst = WASAPIManager::getEndPoints(EDataFlow::eRender, DEVICE_STATE_ACTIVE);
 
 	println("设备数量:{}", lst.size());

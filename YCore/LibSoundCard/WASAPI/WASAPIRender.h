@@ -49,6 +49,7 @@ private:
 	IAudioRenderClient* pRenderClient = nullptr;
 	WaveFormat waveFormat;
 	HANDLE hEvent = nullptr;
+	HANDLE hExit = nullptr;
 	STAFuture renderFuture;
 
 	long latencyMills = 100;

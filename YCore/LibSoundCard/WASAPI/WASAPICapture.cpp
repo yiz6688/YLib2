@@ -20,6 +20,11 @@ WASAPICapture::~WASAPICapture()
 	{
 		(void)this->stopCapture();
 		this->captureFuture.wait();
+
+		CloseHandle(this->hEvent);
+		CloseHandle(this->hExit);
+		this->hEvent = NULL;
+		this->hExit = NULL;
 	}
 }
 
@@ -29,6 +34,20 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 	IMMDeviceCollection* pCollection;
 	IMMDeviceEnumerator* pEnumerator;
 	HRESULT hr;
+
+
+//无安全属性，手动重置 初始无信号
+	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (this->hEvent == INVALID_HANDLE_VALUE)
+	{
+		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+	}
+	this->hExit = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (this->hExit == INVALID_HANDLE_VALUE)
+	{
+		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+	}
+
 
 	const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
 	const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
@@ -63,12 +82,6 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 
 	long hnsBufferDuration = this->latencyMills * 10000L;
 	long hnsPeriodicity = 0;
-
-	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	if (hEvent == INVALID_HANDLE_VALUE)
-	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
-	}
 
 	WAVEFORMATEX fmtEx = this->waveFormat.toWaveFormatEx();
 	int streamFlags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY | AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
@@ -140,11 +153,9 @@ std::expected<void, std::string> WASAPICapture::doCapture()
 	HRESULT hr;
 	UINT32  numFramesPadding;
 
-
-
 	auto bytesPerFrame = this->waveFormat.getBlockAlign();
-
-
+	ResetEvent(this->hEvent);  //重置事件
+	ResetEvent(this->hExit);  //重置事件
 
 	hr = pAudioClient->Start();
 	if (FAILED(hr))
@@ -157,57 +168,28 @@ std::expected<void, std::string> WASAPICapture::doCapture()
 	long actualDuration = (long)((double)ReftimesPerSec *
 		this->bufferFrameSize / this->waveFormat.getSampleRate());
 	int waitMilliseconds = (int)(3 * actualDuration / ReftimesPerMillisec);
-
-	HANDLE hWaitHandles[1] = { this->hEvent };
+	HANDLE handles[2] = { this->hEvent, this->hExit };
 
 	while (this->captureState == CaptureState::Capturing)
 	{
+		DWORD dwSignalledIndex;
+		hr = CoWaitForMultipleHandles(
+					COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
+					waitMilliseconds,  // 超时时间：无限超时
+					2,                 // 句柄数量
+					handles,     // 句柄数组
+					&dwSignalledIndex  // 输出：触发返回的句柄索引
+				);
 
-
-		DWORD waitResult = MsgWaitForMultipleObjects(
-			1,
-			hWaitHandles,
-			FALSE,
-			waitMilliseconds,
-			QS_ALLINPUT
-		);
-		
-
-
-
-		if (waitResult == WAIT_OBJECT_0) {
-			// hAudioEvent 被触发：正常处理音频数据
-			// 调用 GetNextPacketSize -> GetBuffer -> 处理 -> ReleaseBuffer
-		}
-		//else if (waitResult == WAIT_OBJECT_0 + 1) {
-		//	// hStopEvent 被触发：外部要求停止，安全跳出循环
-		//	break;
-		//}
-		else if (waitResult == WAIT_OBJECT_0 + 1) {
-			// 有 Windows 消息：处理 STA 消息泵，防止 COM 代理死锁
-			MSG msg;
-			while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
+		if (hr == S_OK) {
+			if(dwSignalledIndex == 0)  //信号事件
+			{
+				ResetEvent(this->hEvent);  //重置事件
+			}else if(dwSignalledIndex == 1)  //退出事件
+			{
+				break;
 			}
 		}
-		else if (waitResult == WAIT_TIMEOUT) {
-			// 跳出
-			break;
-		}
-		else {
-			// 其他错误：安全跳出循环
-			break;
-		}
-
-
-
-
-		//DWORD ret = WaitForSingleObject(hEvent, waitMilliseconds);
-		//if (ret != WAIT_OBJECT_0)  //非正常完成   
-		//{
-		//	break;
-		//}
 
 		auto res = this->readNextPacket();
 		if (!res)
@@ -334,6 +316,7 @@ std::expected<void, std::string> WASAPICapture::stopCapture()
 	if (this->captureState != CaptureState::Stopped && this->captureState != CaptureState::Stopping)
 	{
 		this->captureState = CaptureState::Stopping; //标记为停止中
+		SetEvent(this->hExit);  //触发退出事件
 	}
 	return std::expected<void, std::string>();
 }
