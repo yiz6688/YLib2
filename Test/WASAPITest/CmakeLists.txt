@@ -1,0 +1,13 @@
+
+
+
+
+
+#RenderTest配置
+add_executable(RenderTest  RenderTest.cpp)
+target_link_libraries(RenderTest PRIVATE ${LIBNAME})
+
+
+#CaptureTest配置
+add_executable(CaptureTest  CaptureTest.cpp)
+target_link_libraries(CaptureTest PRIVATE ${LIBNAME})

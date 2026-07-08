@@ -16,6 +16,8 @@ public:
 	~WASAPIRender();
 
 
+	STAType initSTA(std::string_view id);
+
 	std::expected<void, std::string> init(std::string_view id);
 
 	std::expected<void, std::string> release();
@@ -55,4 +57,6 @@ private:
 	long latencyMills = 100;
 
 	UINT32 bufferFrameSize = 0;
+
+	WaveReader *reader = nullptr;
 };

@@ -4,7 +4,7 @@
 #include<format>
 #include"WASAPIRender.h"
 #include<Audioclient.h>
-
+#include<print>
 
 
 static long ReftimesPerSec = 10000000;
@@ -27,6 +27,16 @@ WASAPIRender::~WASAPIRender()
 		this->hEvent = NULL;
 		this->hExit = NULL;
 	}
+}
+
+STAType WASAPIRender::initSTA(std::string_view id)
+{
+	std::println("调用initSTA");
+	auto fu = this->staWorker.submit([this, id]
+	{
+		return this->init(id);
+	});
+	return fu.get();
 }
 
 std::expected<void, std::string> WASAPIRender::init(std::string_view id)
@@ -70,7 +80,7 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 		return std::unexpected(std::format("{},hr={}", "获取Device失败", hr));
 	}
 
-	hr = this->pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&pAudioClient);
+	hr = this->pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->pAudioClient);
 	if (FAILED(hr))
 	{
 		return std::unexpected(std::format("{},hr={}", "获取AudioClient失败", hr));
@@ -281,18 +291,18 @@ std::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
 		return std::unexpected("WaveFormat mismatch");
 	}
 
-
+	this->waveReader = waveReader;
 	this->playbackState = PlaybackState::Starting;
 
-	this->renderFuture = this->staWorker.submit(
-		[this] {
-			STAType result = this->doPlay();
-			if (!result)
-			{
-				this->playbackState = PlaybackState::Stopped;
-			}
-			return result;
-		});
+	// this->renderFuture = this->staWorker.submit(
+	// 	[this] {
+	// 		STAType result = this->doPlay();
+	// 		if (!result)
+	// 		{
+	// 			this->playbackState = PlaybackState::Stopped;
+	// 		}
+	// 		return result;
+	// 	});
 
 
 

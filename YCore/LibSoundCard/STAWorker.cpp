@@ -48,12 +48,17 @@ long STAWorker::consumer()
         STATask task;
         {
             unique_lock<mutex> lk(this->mtx);
-
-            //没有设置退出标志 并且列表是空的就循环
-            while(this->flag && this->taskLsts.empty())
+            if(flag == false)
             {
+                break;
+            }
+
+            while(this->taskLsts.empty())
+            {
+                lk.unlock();
                 //SetLastError(ERROR_SUCCESS);
                 DWORD dwSignalledIndex;
+                println("开始等待信号!!!!");
                 HRESULT hr = CoWaitForMultipleHandles(
                             COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
                             INFINITE,          // 超时时间：无限超时
@@ -61,18 +66,24 @@ long STAWorker::consumer()
                             &this->hEvent,     // 句柄数组
                             &dwSignalledIndex  // 输出：触发返回的句柄索引
                         );
-            
+                println("等待信号成功:{}", dwSignalledIndex);
+                lk.lock();
                 // 根据返回值处理结果
                 //RPC_S_CALLPENDING 表示超时
                 if (hr == S_OK) {
                     // 事件被成功触发
+                    println("{}", dwSignalledIndex);
                     break;  
                 } else {
                     // 等待超时
                     Sleep(10); //异常状态加个延时，防止疯狂来消息
                 }
             }
-                
+            if(this->taskLsts.empty())
+            {
+                continue;
+            }
+
             if(this->flag == false)
             {
                 break;
@@ -81,9 +92,8 @@ long STAWorker::consumer()
             task = std::move(this->taskLsts.front());
             this->taskLsts.pop();
         }
-
         task(); //执行任务。
-
+        println("任务执行完成!!!");
     }
 
     CoUninitialize(); //回收com资源

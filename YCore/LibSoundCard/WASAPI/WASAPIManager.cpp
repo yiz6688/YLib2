@@ -7,6 +7,7 @@
 #include<Audioclient.h>
 #include<Functiondiscoverykeys_devpkey.h>
 #include"../../Encoding.h"
+#include<print>
 
 std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD dwMask)
 {
@@ -99,4 +100,23 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 
 
 	return lst;
+}
+
+WASAPIRender *WASAPIManager::createRender(EndPointInfo &&info)
+{
+	WASAPIRender* render = new WASAPIRender();
+
+	STAType result = render->initSTA(info.id);
+	if(!result)
+	{
+		std::println("init 失败: {}", result.error());
+		return nullptr;
+	}
+
+    return render;
+}
+
+WASAPICapture *WASAPIManager::createCapture(EndPointInfo &&info)
+{
+    return nullptr;
 }

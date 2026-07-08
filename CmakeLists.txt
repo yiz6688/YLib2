@@ -40,3 +40,5 @@ target_include_directories(${LIBNAME} PUBLIC ./YCore)
 
 
 add_subdirectory(Test)
+
+add_subdirectory(Test/WASAPITest)

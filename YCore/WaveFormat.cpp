@@ -111,7 +111,14 @@ WAVEFORMATEX WaveFormat::toWaveFormatEx() const
     wfx.nAvgBytesPerSec = this->bytesPerSec;
     wfx.nBlockAlign = this->blockAlign;
     wfx.wBitsPerSample = this->bitsPerSample;
-    wfx.cbSize = this->extraSize;
+    if(this->extraSize > 0)
+    {
+        wfx.cbSize = this->extraSize;
+    }else
+    {
+        wfx.cbSize = 0;
+    }
+
     return wfx;
     
 }
