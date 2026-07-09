@@ -79,7 +79,7 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 
 		wchar_t* pDevId;
 		hr = pDevice->GetId(&pDevId);
-		info.id = Encoding::UTF162UTF8(pDevId);  //转换为utf8字符串
+		info.id = Encoding::UTF16ToUTF8(pDevId);  //转换为utf8字符串
 		CoTaskMemFree(pDevId);
 
 		IPropertyStore* pProperty = nullptr;
@@ -90,7 +90,7 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 		hr = pProperty->GetValue(PKEY_Device_FriendlyName, &varName);
 		if (SUCCEEDED(hr) && varName.vt != VT_EMPTY)
 		{
-			info.frindlyName = Encoding::UTF162UTF8(varName.pwszVal);  //转换为utf8字符串
+			info.frindlyName = Encoding::UTF16ToUTF8(varName.pwszVal);  //转换为utf8字符串
 		}
 		PropVariantClear(&varName);
 
@@ -102,9 +102,9 @@ std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD
 	return lst;
 }
 
-WASAPIRender *WASAPIManager::createRender(EndPointInfo &&info)
+WASAPIRender *WASAPIManager::createRender(EndPointInfo &&info, WaveFormat fmt)
 {
-	WASAPIRender* render = new WASAPIRender();
+	WASAPIRender* render = new WASAPIRender(fmt);
 
 	STAType result = render->initSTA(info.id);
 	if(!result)
@@ -116,7 +116,16 @@ WASAPIRender *WASAPIManager::createRender(EndPointInfo &&info)
     return render;
 }
 
-WASAPICapture *WASAPIManager::createCapture(EndPointInfo &&info)
+WASAPICapture *WASAPIManager::createCapture(EndPointInfo &&info, WaveFormat fmt)
 {
-    return nullptr;
+    WASAPICapture* capture = new WASAPICapture(fmt);
+
+	STAType result = capture->initSTA(info.id);
+	if(!result)
+	{
+		std::println("init 失败: {}", result.error());
+		return nullptr;
+	}
+
+    return capture;
 }

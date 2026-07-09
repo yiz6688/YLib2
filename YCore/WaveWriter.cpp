@@ -190,7 +190,7 @@ std::expected<long, std::string> WaveWriter::getPosition()
 		return pos;
 	}
 
-	return { pos.value() - this->_dataPos };
+	return { pos.value() - this->_dataPos - 8};
 }
 
 std::expected<void, std::string> WaveWriter::setPosition(long value)
@@ -203,7 +203,7 @@ std::expected<void, std::string> WaveWriter::setPosition(long value)
 	}
 	value -= (value % this->_fmt->getBlockAlign());  //对齐采样块
 
-	return this->_stream->setPosition(value + this->_dataPos);
+	return this->_stream->setPosition(value + this->_dataPos + 8);
 }
 
 std::expected<long, std::string> WaveWriter::seek(long offset, SeekOrigin origin)
@@ -257,11 +257,13 @@ std::expected<void, std::string> WaveWriter::writeWaveHeader()
 	result = this->_stream->write("fmt "); CHECK_RESULT(result);
 	auto ret = this->_fmt->writeTo(this->_stream); CHECK_RESULT(ret);
 
+	result = this->_stream->getPosition();  CHECK_RESULT(result);//记录data块size的位置，后续更新
+	this->_dataPos = result.value();
+
 	result = this->_stream->write("data"); CHECK_RESULT(result);
 	result = this->_stream->write("\0\0\0\0", 4);  CHECK_RESULT(result);//data块大小，占位，后续更新  4字节
 
-	result = this->_stream->getPosition();  CHECK_RESULT(result);//记录data块size的位置，后续更新
-	this->_dataPos = result.value();
+
 	return {};
 }
 
@@ -290,6 +292,7 @@ const WaveFormat& WaveWriter::getWaveFormat()
 std::expected<void, std::string> WaveWriter::updateHeader()
 {
 	BinaryStream bs(this->_stream);
+	//获取当前写指针
 	auto position = this->getPosition(); CHECK_RESULT(position);
 	//更新RIFF
 	auto result = this->_stream->seek(4, SeekOrigin::Begin); CHECK_RESULT(result);
@@ -297,7 +300,7 @@ std::expected<void, std::string> WaveWriter::updateHeader()
 	result = bs.write(int32_t(this->_stream->getLength().value() - 8)); CHECK_RESULT(result);
 
 	//更新data块
-	result = this->_stream->seek(this->_dataPos - 4, SeekOrigin::Begin); CHECK_RESULT(result);
+	result = this->_stream->seek(this->_dataPos + 4, SeekOrigin::Begin); CHECK_RESULT(result);
 	result = bs.write((int32_t)this->_dataSize); CHECK_RESULT(result);
 	//恢复原来的位置
 	auto ret = this->setPosition(position.value()); CHECK_RESULT(ret);

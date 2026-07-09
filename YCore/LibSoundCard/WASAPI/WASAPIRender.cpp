@@ -1,5 +1,5 @@
 #include<windows.h>
-#include <comutil.h>
+#include"../../Encoding.h"
 #include<mmdeviceapi.h>
 #include<format>
 #include"WASAPIRender.h"
@@ -10,7 +10,8 @@
 static long ReftimesPerSec = 10000000;
 static long ReftimesPerMillisec = 10000;
 
-WASAPIRender::WASAPIRender()
+WASAPIRender::WASAPIRender(WaveFormat fmt)
+	:waveFormat(fmt)
 {
 
 }
@@ -72,9 +73,8 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 		return std::unexpected(std::format("{},hr={}", "获取Enumerator失败", hr));
 	}
 
-	LPCWSTR lpwstrId = _com_util::ConvertStringToBSTR(id.data());
-
-	hr = pEnumerator->GetDevice(lpwstrId, &this->pDevice);
+	auto u16Id = Encoding::UTF8ToUTF16(id.data());
+	hr = pEnumerator->GetDevice(u16Id.c_str(), &this->pDevice);
 	if (FAILED(hr))
 	{
 		return std::unexpected(std::format("{},hr={}", "获取Device失败", hr));
@@ -274,6 +274,10 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	{
 		return std::unexpected(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
 	}
+	if(readSize == 0)
+	{
+		this->playbackState = PlaybackState::Stopping;
+	}
 
 
 	return STAType();
@@ -294,15 +298,15 @@ std::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
 	this->waveReader = waveReader;
 	this->playbackState = PlaybackState::Starting;
 
-	// this->renderFuture = this->staWorker.submit(
-	// 	[this] {
-	// 		STAType result = this->doPlay();
-	// 		if (!result)
-	// 		{
-	// 			this->playbackState = PlaybackState::Stopped;
-	// 		}
-	// 		return result;
-	// 	});
+	this->renderFuture = this->staWorker.submit(
+		[this] {
+			STAType result = this->doPlay();
+			if (!result)
+			{
+				this->playbackState = PlaybackState::Stopped;
+			}
+			return result;
+		});
 
 
 

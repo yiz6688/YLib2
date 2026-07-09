@@ -12,6 +12,7 @@ public:
 	WASAPICapture(WaveFormat _waveFormat);
 	~WASAPICapture();
 
+	STAType initSTA(std::string_view id);
 
 	std::expected<void, std::string> init(std::string_view id);
 
@@ -39,6 +40,7 @@ public:
 private:
 	WaveRingBuffer *ringBuffer = nullptr;
 	WaveWriter* waveWriter = nullptr;
+	long recordMills;
 	STAWorker staWorker;
 	CaptureState captureState = CaptureState::Stopped;
 	IMMDevice* pDevice = nullptr;

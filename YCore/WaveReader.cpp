@@ -248,7 +248,7 @@ std::vector<char> WaveReader::getChunkData(RIFFChunk chunk)
 
 std::expected<long, std::string> WaveReader::getPosition()
 {
-	return this->_stream->getPosition().value() - this->_dataPos;
+	return this->_stream->getPosition().value() - this->_dataPos - 8;
 }
 
 std::expected<void, std::string> WaveReader::setPosition(long value)
@@ -261,7 +261,7 @@ std::expected<void, std::string> WaveReader::setPosition(long value)
 	}
 	value -= (value % this->_fmt->getBlockAlign());  //对齐采样块
 
-	return this->_stream->setPosition(value + this->_dataPos);
+	return this->_stream->setPosition(value + this->_dataPos + 8);
 }
 
 std::expected<long, std::string> WaveReader::seek(long offset, SeekOrigin origin)
@@ -402,7 +402,7 @@ std::expected<long, std::string>  WaveReader::read(char* buffer, int size)
 std::expected<long, std::string>  WaveReader::read(char* buffer, int size, int offset, int count)
 {
 	auto result = this->getPosition(); CHECK_RESULT(result);
-	auto value = result.value() - this->_dataSize;
+	auto value = this->_dataSize - result.value();
 	if (value <= 0)
 	{
 		return 0;

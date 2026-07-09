@@ -12,7 +12,7 @@ class IAudioRenderClient;
 class WASAPIRender : public IRender
 {
 public:
-	WASAPIRender();
+	WASAPIRender(WaveFormat fmt);
 	~WASAPIRender();
 
 

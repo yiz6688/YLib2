@@ -424,7 +424,7 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 	}
 	
 	
-	if (count > this->_capacity) //剩余没拷贝的超过了内置缓冲区大小,直接读到请求缓冲区
+	if (count >= this->_capacity) //剩余没拷贝的超过了内置缓冲区大小,直接读到请求缓冲区
 	{
 		auto result = this->readCore(array, size, offset, count);
 		if (!result)
@@ -444,10 +444,7 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 		{
 			return result;
 		}
-		if (copySize == 0)
-		{
-			copySize = count;
-		}
+		copySize = count;
 
 		if (copySize > result.value()) //如果读取数量不够，就只拷贝实际读取的数量
 		{
@@ -680,7 +677,7 @@ std::expected<void, std::string> FileStream::init(const string& path, FileAccess
 		}
 	}
 
-	wstring wpath = Encoding::GBK2UTF16(path);
+	wstring wpath = Encoding::GBKToUTF16(path);
 	this->hFile = CreateFileW(wpath.c_str(),
 		dwAccess,   //文件访问权限 读写  如果是0就是不请求只是用来查询
 		dwShareMode,    //指定文件共享模式 允许其他进程读取这个文件

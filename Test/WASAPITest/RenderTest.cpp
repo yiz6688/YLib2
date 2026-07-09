@@ -34,19 +34,27 @@ int main()
         println("Render frindlyName:{}, id{}", ep.frindlyName, ep.id);
     }
     
-    auto* render = WASAPIManager::createRender(std::move(RenderEndPoints.front()));
+    WaveReader reader(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
+
+    // vector<char> buffer;
+    // buffer.resize(4800);
+
+    // reader.read(buffer.data(), 4800);
+
+
+
+    // return 0;
+    auto* render = WASAPIManager::createRender(std::move(RenderEndPoints.front()), reader.getWaveFormat());
 
     if(render == nullptr)
     {
         std::println("播放器初始化失败");
     }
 
-    WaveReader reader("D:\\wave\\Spk.wav");
+    
     println("开始播放");
-    //STAType result = render->playAsync(&reader);
+    STAType result = render->playAsync(&reader);
 
-
-    Sleep(5000);
-
+    result = render->waitPlayDone();
     return 0;
 }

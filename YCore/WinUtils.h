@@ -33,7 +33,7 @@ public:
 
 		auto size = GetModuleFileNameW(hModule, path, MAX_PATH);
 
-		auto value = Encoding::UTF162UTF8(std::wstring_view(path, size));
+		auto value = Encoding::UTF16ToUTF8(std::wstring_view(path, size));
 		return value;
 
 	}
@@ -44,7 +44,7 @@ public:
 		// 传入 NULL 表示获取当前进程主模块的路径
 		DWORD size = GetModuleFileNameW(NULL, path, MAX_PATH);
 
-		auto value = Encoding::UTF162UTF8(std::wstring_view(path, size));
+		auto value = Encoding::UTF16ToUTF8(std::wstring_view(path, size));
 		return value;
 	}
 

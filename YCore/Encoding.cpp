@@ -8,7 +8,7 @@ using namespace std;
 
 
 
-std::wstring Encoding::GBK2UTF16(string_view gbk)
+std::wstring Encoding::GBKToUTF16(string_view gbk)
 {
 
 	//多字节转成utf16
@@ -24,7 +24,21 @@ std::wstring Encoding::GBK2UTF16(string_view gbk)
 	return utf16;
 }
 
-std::wstring Encoding::UTF82UTF16(string_view utf8)
+std::string Encoding::UTF16ToGBK(wstring_view utf16)
+{
+
+	auto len = WideCharToMultiByte(CP_ACP, 0, utf16.data(), -1, NULL, 0, NULL, NULL);
+
+	std::string gbk;
+	gbk.resize(len - 1);
+	//原始字符串使用-1 自动计算长度
+	len = WideCharToMultiByte(CP_ACP, 0, utf16.data(), -1, gbk.data(), len - 1, NULL, NULL);
+
+	return gbk;
+}
+
+
+std::wstring Encoding::UTF8ToUTF16(string_view utf8)
 {
 	//多字节转成utf16
 	auto len = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), -1, NULL, 0);
@@ -39,21 +53,7 @@ std::wstring Encoding::UTF82UTF16(string_view utf8)
 	return utf16;
 }
 
-
-std::string Encoding::UTF162GBK(wstring_view utf16)
-{
-
-	auto len = WideCharToMultiByte(CP_ACP, 0, utf16.data(), -1, NULL, 0, NULL, NULL);
-
-	std::string gbk;
-	gbk.resize(len - 1);
-	//原始字符串使用-1 自动计算长度
-	len = WideCharToMultiByte(CP_ACP, 0, utf16.data(), -1, gbk.data(), len - 1, NULL, NULL);
-
-	return gbk;
-}
-
-std::string Encoding::UTF162UTF8(wstring_view utf16)
+std::string Encoding::UTF16ToUTF8(wstring_view utf16)
 {
 	auto len = WideCharToMultiByte(CP_UTF8, 0, utf16.data(), -1, NULL, 0, NULL, NULL);
 
@@ -65,3 +65,16 @@ std::string Encoding::UTF162UTF8(wstring_view utf16)
 	return utf8;
 }
 
+std::string Encoding::GBKToUTF8(std::string_view gbk)
+{
+	auto utf16 = Encoding::GBKToUTF16(gbk);
+
+	return Encoding::UTF16ToUTF8(utf16.data());
+}
+
+std::string Encoding::UTF8ToGBK(std::string_view utf8)
+{
+    auto utf16 = Encoding::UTF8ToUTF16(utf8);
+
+	return Encoding::UTF16ToGBK(utf16.data());
+}

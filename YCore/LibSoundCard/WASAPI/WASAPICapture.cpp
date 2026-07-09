@@ -1,10 +1,10 @@
 #include<windows.h>
-#include <comutil.h>
+#include"../../Encoding.h"
 #include<mmdeviceapi.h>
 #include<format>
 #include"WASAPICapture.h"
 #include<Audioclient.h>
-
+#include<print>
 
 
 static long ReftimesPerSec = 10000000;
@@ -26,6 +26,16 @@ WASAPICapture::~WASAPICapture()
 		this->hEvent = NULL;
 		this->hExit = NULL;
 	}
+}
+
+STAType WASAPICapture::initSTA(std::string_view id)
+{
+	std::println("调用initSTA");
+	auto fu = this->staWorker.submit([this, id]
+	{
+		return this->init(id);
+	});
+	return fu.get();
 }
 
 std::expected<void, std::string> WASAPICapture::init(std::string_view id)
@@ -61,9 +71,9 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 		return std::unexpected(std::format("{},hr={}", "获取Enumerator失败", hr));
 	}
 
-	LPCWSTR lpwstrId = _com_util::ConvertStringToBSTR(id.data());
+	auto u16Id = Encoding::UTF8ToUTF16(id.data());
 
-	hr =  pEnumerator->GetDevice(lpwstrId,  &this->pDevice);
+	hr =  pEnumerator->GetDevice(u16Id.c_str(),  &this->pDevice);
 	if (FAILED(hr))
 	{
 		return std::unexpected(std::format("{},hr={}", "获取Device失败", hr));
@@ -243,11 +253,22 @@ STAType WASAPICapture::readNextPacket()
 		int bytesAvailable = framesAvailable * bytesPerFrame;
 		//就方案是装不下的时候开始写入。
 		
-
 		// if not silence...
 		if ((dwFlags & AUDCLNT_BUFFERFLAGS_SILENT) != AUDCLNT_BUFFERFLAGS_SILENT)
 		{
-			this->ringBuffer->writeBytes((char*)pData, bytesAvailable);  //写入环形缓冲区
+			long mills = this->waveWriter->getTotalMills();
+			long mills2 = this->recordMills - mills;
+			long bytesWriteable = this->waveFormat.mills2Bytes(mills2);
+			if(bytesWriteable > bytesAvailable)
+			{
+				this->waveWriter->write((char*)pData, bytesAvailable);
+			}else
+			{
+				this->waveWriter->write((char*)pData, bytesWriteable);
+				this->captureState = CaptureState::Stopping;
+			}
+			
+			//this->ringBuffer->writeBytes((char*)pData, bytesAvailable);  //写入环形缓冲区
 			//std::copy(pData, pData + bytesAvailable, this->recordBuffer + recordBufferOffset);  //拷贝到缓冲区中
 		}
 		else
@@ -269,18 +290,20 @@ STAType WASAPICapture::readNextPacket()
 	return std::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* waveWriter, int maxRecordMills)
+std::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _waveWriter, int maxRecordMills)
 {
 	if (this->captureState == CaptureState::Starting || this->captureState == CaptureState::Capturing)
 	{
 		return std::unexpected("Capture is already running");
 	}
-	auto fmt = waveWriter->getWaveFormat();
+	auto fmt = _waveWriter->getWaveFormat();
 	if (fmt != this->waveFormat)
 	{
 		return std::unexpected("WaveFormat mismatch");
 	}
 	
+	this->waveWriter = _waveWriter;
+	this->recordMills = maxRecordMills;
 
 	this->captureState = CaptureState::Starting;
 

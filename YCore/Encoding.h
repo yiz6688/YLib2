@@ -13,12 +13,19 @@ public:
 
 
 public:
-	static std::wstring GBK2UTF16(std::string_view gbk);
+	static std::wstring GBKToUTF16(std::string_view gbk);
 
-	static std::wstring UTF82UTF16(std::string_view utf8);
+	static std::string UTF16ToGBK(std::wstring_view utf16);
 
-	static std::string UTF162GBK(std::wstring_view utf16);
+	static std::wstring UTF8ToUTF16(std::string_view utf8);
 
-	static std::string UTF162UTF8(std::wstring_view utf16);
+	static std::string UTF16ToUTF8(std::wstring_view utf16);
+
+	static std::string GBKToUTF8(std::string_view gbk);
+
+	static std::string UTF8ToGBK(std::string_view utf8);
+
+
+
 
 };
