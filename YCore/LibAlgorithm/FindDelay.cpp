@@ -2,39 +2,56 @@
 #include<algorithm>
 #include "FindDelay.h"
 #include"fftw3.h"
+#include<complex>
+#include<bit>
+#include<memory>
 
-int FindDelay::corr_delay(std::vector<float> vec1, std::vector<float> vec2)
+using complex = std::complex<double>;
+
+int FindDelay::corr_delay(std::span<double> x, std::span<double> y, int maxLag)
 {
-	auto size1 = vec1.size();
-	auto size2 = vec2.size();
+	auto xLen = x.size();
+	auto yLen=  y.size();
+    auto sampleNum = xLen + yLen - 1;
+    int fftSize =  std::bit_ceil(sampleNum);  //等价于nextpow2
+    int M = fftSize / 2 + 1;
 
-	//要求长度相等
 
-	int max_lag = static_cast<int>(size1 - 1);
-	std::vector<float> corr(2 * size1 - 1, 0.0f);
 
-	for (int lag = -max_lag; lag <= max_lag; ++lag)
-	{
-		float sum = 0.0f;
-		int count = 0;
-		for (int i = 0; i < size1; ++i)
-		{
-			int j = i - lag;
-			if (j >= 0 && j < size1)
-			{
-				sum += vec1[i] * vec2[j];
-				count++;
-			}
-		}
+    std::vector<double> in(sampleNum);  //缓冲区
 
-		corr[lag + max_lag] = sum;  //除以count可以尽心归一化
-	}
+    //std::unique_ptr<double> in = std::make_unique<double>(sampleNum);
+    fftw_complex* out = fftw_alloc_complex(M);
 
-	auto it = std::max_element(corr.begin(), corr.end());
-	int max_idx = std::distance(corr.begin(), it);
+    complex* X = reinterpret_cast<complex*> (out);
+    std::vector<complex> temp(M);
 
-	max_idx -= max_lag;
+    auto pfft = fftw_plan_dft_r2c_1d(fftSize, in.data(), out, FFTW_ESTIMATE);
 
+    auto pifft = fftw_plan_dft_c2r_1d(fftSize, out, in.data(), FFTW_ESTIMATE);
+
+    std::fill_n(in.begin(), sampleNum, 0.0); //清0
+    std::copy_n(x.begin(), xLen, in.begin()); //copy x到输入
+
+    fftw_execute(pfft);  //fft x
+    std::copy_n(X, M, temp.data());  //拷贝过去
+
+    std::fill_n(in.begin(), sampleNum, 0.0); //清0
+    std::copy_n(y.begin(), yLen, in.begin()); //copy y到输入
+
+    fftw_execute(pfft); //fft y
+
+    for(int i=0; i< M ;i++)
+    {
+        X[i] *= std::conj(temp[i]);  //x*conj(y)  共轭乘。
+    }
+
+    fftw_execute(pifft); //ifft 结果是互相关序列， 结果在 in里面
+
+    fftw_destroy_plan(pfft);
+    fftw_destroy_plan(pifft);
+
+    fftw_free(out);
 
 
 
@@ -42,11 +59,11 @@ int FindDelay::corr_delay(std::vector<float> vec1, std::vector<float> vec2)
 }
 
 
-int  FindDelay::gcc_phat_delay(const std::vector<float>& x1, const std::vector<float>& x2) {
-    if (x1.size() != x2.size()) {
+int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y) {
+    if (x.size() != y.size()) {
         //throw std::invalid_argument("信号长度必须相等");
     }
-    size_t N = x1.size();
+    size_t N = x.size();
 
     // 零填充到 2N 以避免循环卷积（提高分辨率）
     size_t fft_size = 1;
@@ -61,9 +78,9 @@ int  FindDelay::gcc_phat_delay(const std::vector<float>& x1, const std::vector<f
 
     // 填充输入（其余补零）
     for (size_t i = 0; i < fft_size; ++i) {
-        in1[i][0] = (i < N) ? x1[i] : 0.0;
+        in1[i][0] = (i < N) ? x[i] : 0.0;
         in1[i][1] = 0.0;
-        in2[i][0] = (i < N) ? x2[i] : 0.0;
+        in2[i][0] = (i < N) ? y[i] : 0.0;
         in2[i][1] = 0.0;
     }
 

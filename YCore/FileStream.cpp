@@ -718,3 +718,16 @@ std::expected<void, std::string> FileStream::init(const string& path, FileAccess
 
 	return {};
 }
+
+std::expected<FileStream, std::string> FileStream::create(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode)
+{
+    //return std::expected<FileStream, std::string>();
+
+	return std::unexpected("");
+}
+
+std::expected<FileStream, std::string> FileStream::create(std::string_view filepath, FileAccess fileAccess, FileMode fileMode)
+{
+    //return std::expected<FileStream, std::string>();
+	return std::unexpected("");
+}

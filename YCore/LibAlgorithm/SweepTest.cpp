@@ -126,11 +126,12 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 		int nCycle = 0;
 		if (minCycle < Cycle)
 		{
-			nCycle = static_cast<int>(Cycle);   //每个频点循环的周期数,四舍五入
-			if (Cycle - nCycle > 0.5)
-			{
-				nCycle++;
-			}
+			nCycle = static_cast<int>(round(Cycle));
+			// nCycle = static_cast<int>(Cycle);   //每个频点循环的周期数,四舍五入
+			// if (Cycle - nCycle > 0.5)
+			// {
+			// 	nCycle++;
+			// }
 			if (nCycle > minCycle * 400) { nCycle = minCycle * 400; };
 		}
 
@@ -161,15 +162,6 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 
 	for (auto const& info : infos)
 	{
-		for (int j = 0; j < info.sampleNum; j++)
-		{
-			double t = 1.0 * j * info.freq / SampleRate + Q;
-			double val = sin(2 * M_PI * t);
-			wavedata.push_back(val);
-			string log = std::format("Freq: {} index: {} Time: {} val: {} Q: {}", info.freq, j, t, val, Q);
-			std::println("{}", log);
-		}
-
 		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
 
 		Q = realCycle - info.cycle;
@@ -323,8 +315,8 @@ void StepSweep::sweepTest(vector<float> data)
 	//这里是不是要核对一下 假如录音文件长度不够，只有半截，或者其他场景的相关问题。
 	FindDelay fd;
 	//查找音频文件起始位置
-	int findDelay = fd.corr_delay(data, this->waveData);
-
+	//int findDelay = fd.corr_delay(data, this->waveData);
+	int findDelay = 0;
 	int sampleRate = 48000;
 
 	float rate = 0.05;

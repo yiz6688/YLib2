@@ -1,5 +1,6 @@
 #pragma once
 #include<vector>
+#include<span>
 
 class FindDelay
 {
@@ -9,8 +10,8 @@ class FindDelay
 
 
 public:
-	int corr_delay(std::vector<float> vec1, std::vector<float> vec2);
+	int corr_delay(std::span<double> x, std::span<double> y, int maxLag);
 
-	int gcc_phat_delay(const std::vector<float>& vec1, const std::vector<float>& vec2);
+	int gcc_phat_delay(std::span<double> x,  std::span<double> y);
 
 };
