@@ -112,6 +112,12 @@ private:
 public:
 	std::expected<void, std::string> init(const std::string& path, FileAccess fileAccess, FileShare fileShare, FileMode fileMode);
 
+public:
+	static std::expected<FileStream, std::string> create(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode);
+
+	static std::expected<FileStream, std::string> create(std::string_view filepath, FileAccess fileAccess, FileMode fileMode);
+
+
 private:
 	void* hFile;
 	std::unique_ptr<char[]> _buffer;

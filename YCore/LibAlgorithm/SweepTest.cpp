@@ -99,39 +99,24 @@ vector<double> StepSweep::GenerateSweepFreq(double startHz, double stopHz, Octav
 	return vec;
 }
 
-/// <summary>
-///  需要的参数，根据最小持续时间计算出最大持续周期数，和最小周期相比，取大的
-///  计算出当前频率需要的点数
-/// 计算出当前频率持续的时间
-/// </summary>
-/// <param name="startHz"></param>
-/// <param name="stopHz"></param>
-/// <param name="minCycle"></param>
-/// <param name="minDuration"></param>
-/// <param name="oct"></param>
-/// 
-void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct)
+
+void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
 	//最小持续时间单位是毫秒
 	int SampleRate = 48000;
 	vector<double> freqlst = GenerateSweepFreq(startHz, stopHz, oct);
 	vector<SweepInfo> infos;
 
-	int SampleStart = 0;
-	double DurationStart = 0;
+	int sampleStart = 0;
+	double durationStart = 0;
 	for (double freq : freqlst)
 	{
-		double Cycle = minDuration * freq / 1000;  //计算最小持续时间下的周期数, 时间/周期= 周期数
+		double durationCycle = minDuration * freq / 1000.0;  //计算最小持续时间下的周期数, 时间/周期= 周期数
 
 		int nCycle = 0;
-		if (minCycle < Cycle)
+		if (minCycle < durationCycle)
 		{
-			nCycle = static_cast<int>(round(Cycle));
-			// nCycle = static_cast<int>(Cycle);   //每个频点循环的周期数,四舍五入
-			// if (Cycle - nCycle > 0.5)
-			// {
-			// 	nCycle++;
-			// }
+			nCycle = static_cast<int>(round(durationCycle));
 			if (nCycle > minCycle * 400) { nCycle = minCycle * 400; };
 		}
 
@@ -140,31 +125,29 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 		SweepInfo info;
 		info.freq = freq;
 		info.cycle = nCycle;
-		info.sampleNum = static_cast<int>(info.cycle * 1.0 * SampleRate / freq + 0.5);  //采样点数
+		info.sampleNum = static_cast<int>(info.cycle * 1.0 * SampleRate / freq + 0.5);  //采样点数,4舍5入
 		info.duration = info.sampleNum * 1.0 / SampleRate;   //每个频点持续的时间
 
-		string Msg = "Freq: " + to_string(info.freq) + " Cycle: " + to_string(info.cycle) + " Sample: " + to_string(info.sampleNum)
-			+ " Duration: " + to_string(info.duration) + " DurationStart: " + to_string(DurationStart) + " SampleStart: " + to_string(SampleStart);
-		//cout << Msg << endl;
-		//logger.Debug(Msg);
-		SampleStart += info.sampleNum;
-		DurationStart += info.duration;
+		sampleStart += info.sampleNum;
+		durationStart += info.duration;
 		infos.push_back(info);
 	}
-	string Msg = " ************* DurationStart: " + to_string(DurationStart) + " SampleStart: " + to_string(SampleStart);
-	//logger.Debug(Msg);
+
 	int ExtenLen = 2048;
-	Msg = " ************* TotalDuration: " + to_string(DurationStart) + " TotalSample: " + to_string(SampleStart + ExtenLen + 1);
-	//logger.Debug(Msg);
 
 	vector<double> wavedata;
+
 	double Q = 0;
-
-	for (auto const& info : infos)
+	for (auto& info : infos)
 	{
+		info.Q = Q;
 		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
-
-		Q = realCycle - info.cycle;
+		
+		if(realCycle != info.cycle)
+		{
+			Q = Q + realCycle - info.cycle;
+		}
+	
 	}
 
 
@@ -377,4 +360,124 @@ void StepSweep::sweepTest(vector<float> data)
 
 }
 
+std::vector<double> Stimulus::GenerateSweepFreq(double startHz, double stopHz, Octave oct)
+{
+	if (startHz <= 0 || stopHz <= 0)
+	{
+		throw std::invalid_argument("startHz or stopHz must bigger than zero");
 
+	}
+
+	int interval = 1;  //相比R80的跳跃间隔
+	if (oct == Octave::OCT3)
+	{
+		interval = 8;
+	}
+	else if (oct == Octave::OCT6)
+	{
+		interval = 4;
+	}
+	else if (oct == Octave::OCT12)
+	{
+		interval = 2;
+	}
+	else
+	{
+		interval = 1;
+	}
+
+	bool flag = false;
+	double start = startHz, stop = stopHz;
+	if (startHz > stopHz)
+	{
+		start = stopHz;
+		stop = startHz;
+		flag = true;
+	}
+	int exp = int(log10(start));  //起始频率计算映射后的值
+	double rate = pow(10, exp);
+	double freq = start / rate;   //起始频率
+	auto iter = std::lower_bound(R80.begin(), R80.end(), static_cast<float>(freq));
+	int offset = std::distance(R80.begin(), iter);
+
+	int k = offset % interval;
+	if (k != 0)
+	{
+		offset -= k;
+	}
+
+	int size = R80.size();
+	vector<double> vec;
+
+	while (freq < stop)
+	{
+		freq = R80[offset] * rate;
+		vec.push_back(freq);
+		offset += interval;
+		if (offset >= size)
+		{
+			offset = 0;
+			exp++;
+			rate = static_cast<int>(pow(10, exp));
+		}
+	}
+
+	//倒序的
+	if (flag)
+	{
+		return vector<double>(vec.rbegin(), vec.rend());
+		
+	}
+	return vec;
+}
+
+std::vector<SweepInfo> Stimulus::createStepSweep(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, SweepType type)
+{
+	//最小持续时间单位是毫秒
+	int SampleRate = 48000;
+	vector<double> freqlst = GenerateSweepFreq(startHz, stopHz, oct);
+	vector<SweepInfo> infos;
+
+	int sampleStart = 0;
+	double durationStart = 0;
+	for (double freq : freqlst)
+	{
+		double durationCycle = minDuration * freq / 1000.0;  //计算最小持续时间下的周期数, 时间/周期= 周期数
+
+		int nCycle = 0;
+		if (minCycle < durationCycle)
+		{
+			nCycle = static_cast<int>(round(durationCycle));
+			if (nCycle > minCycle * 400) { nCycle = minCycle * 400; };
+		}
+
+		nCycle = max<int>(nCycle, minCycle);   //取较大的
+
+		SweepInfo info;
+		info.freq = freq;
+		info.cycle = nCycle;
+		info.sampleNum = static_cast<int>(info.cycle * 1.0 * SampleRate / freq + 0.5);  //采样点数,4舍5入
+		info.duration = info.sampleNum * 1.0 / SampleRate;   //每个频点持续的时间
+
+		sampleStart += info.sampleNum;
+		durationStart += info.duration;
+		infos.push_back(info);
+	}
+
+	int ExtenLen = 2048;
+
+	double Q = 0;
+	for (auto& info : infos)
+	{
+		info.Q = Q;
+		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
+		
+		if(realCycle != info.cycle)
+		{
+			Q = Q + realCycle - info.cycle;
+		}
+	
+	}
+
+	return infos;
+}

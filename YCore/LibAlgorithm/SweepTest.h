@@ -9,6 +9,11 @@ enum class Octave
 	OCT24   //二十四分之一倍频程
 };
 
+enum class SweepType
+{
+	SC,  //soundcard类型
+	RS	//瑞森类型
+};
 
 struct SweepInfo
 {
@@ -20,12 +25,12 @@ struct SweepInfo
 	double duration;
 	//采样点数
 	int sampleNum;
+	//初始相位
+	double Q;
+
 };
 
 
-/// <summary>
-/// 谐波的结构体
-/// </summary>
 struct Harm
 {
 
@@ -40,13 +45,30 @@ struct Harm
 };
 
 
+
+class Stimulus
+{
+
+public:
+
+	std::vector<double> GenerateSweepFreq(double startHz, double stopHz, Octave oct);
+
+	std::vector<SweepInfo> createStepSweep(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, SweepType type);
+
+
+};
+
+
+
+
+
 class StepSweep
 {
 public:
 	StepSweep();
 	~StepSweep();
 	std::vector<double> GenerateSweepFreq(double startHz, double stopHz, Octave oct);
-	void GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct);
+	void GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
 	void sweepTest(std::vector<float> data);
 

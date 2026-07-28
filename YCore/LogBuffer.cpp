@@ -57,6 +57,11 @@ void LogBuffer::append(int level, const std::string& log)
 	}
 
 	auto now = std::chrono::system_clock::now();
+
+	#ifdef __MINGW32__
+		now = now + std::chrono::hours(8);
+	#endif
+
 	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 	auto data = std::format("{:%Y-%m-%d %H:%M:%S}.{:03} {:<8}{}", std::chrono::floor<std::chrono::seconds>(now), ms.count(), header, log);
 

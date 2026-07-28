@@ -4,11 +4,12 @@
 #include"fftw3.h"
 #include<complex>
 #include<bit>
+#include<span>
 #include<memory>
 
-using complex = std::complex<double>;
+using cpx = std::complex<double>;
 
-int FindDelay::corr_delay(std::span<double> x, std::span<double> y, int maxLag)
+std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> y)
 {
 	auto xLen = x.size();
 	auto yLen=  y.size();
@@ -18,44 +19,60 @@ int FindDelay::corr_delay(std::span<double> x, std::span<double> y, int maxLag)
 
 
 
-    std::vector<double> in(sampleNum);  //缓冲区
+    double* din = fftw_alloc_real(fftSize);
+    fftw_complex* dout = fftw_alloc_complex(M);
 
-    //std::unique_ptr<double> in = std::make_unique<double>(sampleNum);
-    fftw_complex* out = fftw_alloc_complex(M);
+    cpx* X = reinterpret_cast<cpx*> (dout);  //转换指针为标准库类型
+    std::vector<cpx> temp(M);       //缓存
 
-    complex* X = reinterpret_cast<complex*> (out);
-    std::vector<complex> temp(M);
+    
 
-    auto pfft = fftw_plan_dft_r2c_1d(fftSize, in.data(), out, FFTW_ESTIMATE);
+    //正向FFT
+    auto pfft = fftw_plan_dft_r2c_1d(fftSize, din, dout, FFTW_ESTIMATE);
+    //互相关之后的逆向FFT
+    auto pifft = fftw_plan_dft_c2r_1d(fftSize, dout, din, FFTW_ESTIMATE);
 
-    auto pifft = fftw_plan_dft_c2r_1d(fftSize, out, in.data(), FFTW_ESTIMATE);
 
-    std::fill_n(in.begin(), sampleNum, 0.0); //清0
-    std::copy_n(x.begin(), xLen, in.begin()); //copy x到输入
+    std::fill_n(din, fftSize, 0.0); //清0
+    std::copy_n(x.begin(), xLen, din); //copy x到输入
 
     fftw_execute(pfft);  //fft x
-    std::copy_n(X, M, temp.data());  //拷贝过去
+    std::copy_n(X, M, temp.data());  //拷贝到临时缓冲区
 
-    std::fill_n(in.begin(), sampleNum, 0.0); //清0
-    std::copy_n(y.begin(), yLen, in.begin()); //copy y到输入
+    std::fill_n(din, fftSize, 0.0); //清0
+    std::copy_n(y.begin(), yLen, din); //copy y到输入
 
     fftw_execute(pfft); //fft y
 
     for(int i=0; i< M ;i++)
     {
-        X[i] *= std::conj(temp[i]);  //x*conj(y)  共轭乘。
+        X[i] = temp[i] * std::conj(X[i]);//x*conj(y)  共轭乘。
     }
 
     fftw_execute(pifft); //ifft 结果是互相关序列， 结果在 in里面
 
+
+    std::vector<double> corr(sampleNum); 
+    int offset = 0;
+    for(int i = fftSize - yLen + 1; i < fftSize; i++)
+    {
+        corr[offset++] = din[i] / fftSize;
+    }
+
+    for(int i = 0; i< xLen; i++)
+    {
+        corr[offset++] = din[i] / fftSize;
+    }
+
+
+    //释放资源
     fftw_destroy_plan(pfft);
     fftw_destroy_plan(pifft);
 
-    fftw_free(out);
+    fftw_free(din);
+    fftw_free(dout);
 
-
-
-	return 0;
+	return corr;
 }
 
 
