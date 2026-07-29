@@ -21,13 +21,29 @@ struct SweepInfo
 	double freq;
 	//周期数
 	int cycle;
+	//起始时间
+	double durationStart;
 	//持续时间
 	double duration;
+	//采样点起始时间
+	int sampleStart;
 	//采样点数
 	int sampleNum;
 	//初始相位
 	double Q;
 
+
+};
+
+
+struct AudioSource
+{
+	double sampleRate;
+	int totalFrq;
+	int totalSample;
+	double totalTime;
+
+	std::vector<SweepInfo> infos;
 };
 
 
@@ -46,28 +62,14 @@ struct Harm
 
 
 
-class Stimulus
-{
-
-public:
-
-	std::vector<double> GenerateSweepFreq(double startHz, double stopHz, Octave oct);
-
-	std::vector<SweepInfo> createStepSweep(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, SweepType type);
-
-
-};
-
-
-
-
-
 class StepSweep
 {
 public:
 	StepSweep();
 	~StepSweep();
 	std::vector<double> GenerateSweepFreq(double startHz, double stopHz, Octave oct);
+	std::vector<double> GenerateSweepFreq2(double startHz, double stopHz, Octave oct);
+
 	void GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
 	void sweepTest(std::vector<float> data);

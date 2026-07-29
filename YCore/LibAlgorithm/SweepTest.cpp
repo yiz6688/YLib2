@@ -7,17 +7,42 @@
 #include<vector>
 #include<cmath>
 #include<print>
-
+#include<fstream>
 #include"FindDelay.h"
 #include"Harmonic.h"
 
 using namespace std;
 
 //优先数系 R80,对应 1/24倍频程
-std::vector<float> R80 = { 1 ,1.03 ,1.06 ,1.09 ,1.12 ,1.15 ,1.18 ,1.22 ,1.25 ,1.28 ,1.32 ,1.36 ,1.4 ,1.45 ,1.5 ,1.55 ,1.6 ,1.65 ,1.7 ,1.75 ,1.8 ,1.85 ,1.9 ,1.95 ,
+std::vector<double> R80_1 = { 1 ,1.03 ,1.06 ,1.09 ,1.12 ,1.15 ,1.18 ,1.22 ,1.25 ,1.28 ,1.32 ,1.36 ,1.4 ,1.45 ,1.5 ,1.55 ,1.6 ,1.65 ,1.7 ,1.75 ,1.8 ,1.85 ,1.9 ,1.95 ,
 		2 ,2.06 ,2.12 ,2.18 ,2.24 ,2.3 ,2.36 ,2.43 ,2.5 ,2.58 ,2.65 ,2.72 ,2.8 ,2.9 ,3 ,3.07 ,3.15 ,3.25 ,3.35 ,3.45 ,3.55 ,3.65 ,3.75 ,3.87 ,
 		4 ,4.12 ,4.25 ,4.37 ,4.5 ,4.62 ,4.75 ,4.87 ,5 ,5.15 ,5.3 ,5.45 ,5.6 ,5.8 ,6 ,6.15 ,6.3 ,6.5 ,6.7 ,6.9 ,7.1 ,7.3 ,7.5 ,7.75 ,
 		8 ,8.25 ,8.5 ,8.75 ,9 ,9.25 ,9.5 ,9.75 };
+
+
+std::vector<double> R80_2 = {1,1.03,1.06,1.09,1.12,1.15,1.18,1.22,1.25,1.28,1.32,1.36,1.4,1.45,1.5,1.55,1.6,
+				1.65,1.7,1.75,1.8,1.85,1.9,1.95,2,2.06,2.12,2.18,2.24,2.3,2.36,2.43,2.5,2.58,
+				2.65,2.72,2.8,2.9,3,3.07,3.15,3.25,3.35,3.45,3.55,3.65,3.75,3.87,4,4.12,4.25,
+				4.37,4.5,4.62,4.75,4.87,5,5.15,5.3,5.45,5.6,5.8,6,6.15,6.3,6.5,6.7,6.9,7.1,7.3,
+				7.5,7.75,8,8.25,8.5,8.75,9,9.25,9.5,9.75,10,10.3,10.6,10.9,11.2,11.5,11.8,12.2,
+				12.5,12.8,13.2,13.6,14,14.5,15,15.5,16,16.5,17,17.5,18,18.5,19,19.5,20,20.6,21.2,
+				21.8,22.4,23,23.6,24.3,25,25.8,26.5,27.2,28,29,30,30.7,31.5,32.5,33.5,34.5,35.5,
+				36.5,37.5,38.7,40,41.2,42.5,43.7,45,46.2,47.5,48.7,50,51.5,53,54.5,56,58,60,61.5,
+				63,65,67,69,71,73,75,77.5,80,82.5,85,87.5,90,92.5,95,97.5,100,103,106,109,112,115,
+				118,122,125,128,132,136,140,145,150,155,160,165,170,175,180,185,190,195,200,206,212,
+				218,224,230,236,243,250,258,265,272,280,290,300,307,315,325,335,345,355,365,375,387,
+				400,412,425,437,450,462,475,487,500,515,530,545,560,580,600,615,630,650,670,690,710,
+				730,750,775,800,825,850,875,900,925,950,975,1000,1030,1060,1090,1120,1150,1180,1220,
+				1250,1280,1320,1360,1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,1900,1950,2000,
+				2060,2120,2180,2240,2300,2360,2430,2500,2580,2650,2720,2800,2900,3000,3070,3150,3250,
+				3350,3450,3550,3650,3750,3870,4000,4120,4250,4370,4500,4620,4750,4870,5000,5150,5300,
+				5450,5600,5800,6000,6150,6300,6500,6700,6900,7100,7300,7500,7750,8000,8250,8500,8750,
+				9000,9250,9500,9750,10000,10300,10600,10900,11200,11500,11800,12200,12500,12800,13200,
+				13600,14000,14500,15000,15500,16000,16500,17000,17500,18000,18500,19000,19500,20000,
+				20600,21200,21800,22400,23000,23600,24300,25000,25800,26500,27200,28000,29000,30000,
+				30700,31500,32500,33500,34500,35500,36500,37500,38700,40000,41200,42500,43700,45000,
+				46200,47500,48700,50000,51500,53000,54500,56000,58000,60000,61500,63000,65000,67000,
+				69000,71000,73000,75000,77500,80000,82500,85000,87500,90000,92500,95000,97500,100000};
 
 
 StepSweep::StepSweep()
@@ -30,6 +55,7 @@ StepSweep::~StepSweep()
 
 vector<double> StepSweep::GenerateSweepFreq(double startHz, double stopHz, Octave oct)
 {
+	auto& R80 = R80_1;
 	if (startHz <= 0 || stopHz <= 0)
 	{
 		throw std::invalid_argument("startHz or stopHz must bigger than zero");
@@ -99,6 +125,85 @@ vector<double> StepSweep::GenerateSweepFreq(double startHz, double stopHz, Octav
 	return vec;
 }
 
+std::vector<double> StepSweep::GenerateSweepFreq2(double startHz, double stopHz, Octave oct)
+{
+	auto& R80 = R80_2;
+
+   if (startHz <= 0 || stopHz <= 0)
+	{
+		throw std::invalid_argument("startHz or stopHz must bigger than zero");
+
+	}
+
+	int interval = 1;  //相比R80的跳跃间隔
+	if (oct == Octave::OCT3)
+	{
+		interval = 8;
+	}
+	else if (oct == Octave::OCT6)
+	{
+		interval = 4;
+	}
+	else if (oct == Octave::OCT12)
+	{
+		interval = 2;
+	}
+	else
+	{
+		interval = 1;
+	}
+
+	bool flag = false;
+	double start = startHz, stop = stopHz;
+	if (startHz > stopHz)
+	{
+		start = stopHz;
+		stop = startHz;
+		flag = true;
+	}
+
+	auto iter = std::lower_bound(R80.begin(), R80.end(), static_cast<float>(start));
+	int offset = std::distance(R80.begin(), iter);
+
+	double freq = start;
+
+	int size = R80.size();
+	vector<double> vec;
+
+	while (freq < stop)
+	{
+		freq = R80[offset];
+		vec.push_back(freq);
+		offset += interval;
+	}
+
+	//倒序的
+	if (flag)
+	{
+		return vector<double>(vec.rbegin(), vec.rend());
+		
+	}
+	return vec;
+}
+
+void exportSource(AudioSource* src, string filepath)
+{
+	ofstream ofs(filepath);
+	ofs<<"sampleRate: "<<src->sampleRate<<"\n";
+	ofs<<"totalFrq: "<<src->totalFrq<<"\n";
+	ofs<<"totalSample: "<<src->totalSample<<"\n";
+	ofs<<"totalTime: "<<src->totalTime<<"\n";
+
+	for(int i=0; i< src->totalFrq; i++)
+	{
+		auto& info = src->infos[i];
+		ofs<<i<<" "<<info.freq<<", "<<info.cycle<<", "<<info.Q<<", "
+		<<info.durationStart<<", "<<info.duration<<", "<<info.sampleStart<<", "<<info.sampleNum<<"\n";
+	}
+
+	ofs.close();
+}
+
 
 void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
@@ -106,6 +211,10 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 	int SampleRate = 48000;
 	vector<double> freqlst = GenerateSweepFreq(startHz, stopHz, oct);
 	vector<SweepInfo> infos;
+
+
+	int totalSample = 0;
+	double totalTime = 0;
 
 	int sampleStart = 0;
 	double durationStart = 0;
@@ -116,7 +225,21 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 		int nCycle = 0;
 		if (minCycle < durationCycle)
 		{
-			nCycle = static_cast<int>(round(durationCycle));
+			nCycle = static_cast<int>(durationCycle);
+			if(type == 0)
+			{
+				if(nCycle - durationCycle > 0.5)
+				{
+					nCycle++;
+				}
+			}else
+			{
+				if(nCycle - durationCycle > 0)
+				{
+					nCycle++;
+				}	
+			}
+
 			if (nCycle > minCycle * 400) { nCycle = minCycle * 400; };
 		}
 
@@ -125,11 +248,38 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 		SweepInfo info;
 		info.freq = freq;
 		info.cycle = nCycle;
-		info.sampleNum = static_cast<int>(info.cycle * 1.0 * SampleRate / freq + 0.5);  //采样点数,4舍5入
+		
+		double sampleNum = SampleRate * info.cycle / freq;
+		if(type == 0)
+		{
+			info.sampleNum = static_cast<int>(round(sampleNum));  //采样点数,4舍5入
+		}else
+		{
+			int k = static_cast<int>(sampleNum);
+			if(sampleNum - k > 0.5)
+			{
+				k++;
+			}else if(sampleNum - k == 0.5)
+			{
+				if(k%2!= 0)
+				{
+					k++;
+				}
+			}
+			info.sampleNum = k;
+		}
+
 		info.duration = info.sampleNum * 1.0 / SampleRate;   //每个频点持续的时间
+		
+		info.durationStart = durationStart;
+		info. sampleStart = sampleStart;
 
 		sampleStart += info.sampleNum;
 		durationStart += info.duration;
+
+		totalSample += info.sampleNum;
+		totalTime += info.duration;
+
 		infos.push_back(info);
 	}
 
@@ -140,153 +290,36 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 	double Q = 0;
 	for (auto& info : infos)
 	{
-		info.Q = Q;
-		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
-		
-		if(realCycle != info.cycle)
+		info.Q = Q * 360;
+		if(type == 0)
 		{
-			Q = Q + realCycle - info.cycle;
+			double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
+			
+			auto error = abs(realCycle - info.cycle);
+
+			if(error > 0.000001)
+			{
+				Q = realCycle - info.cycle;
+			}else
+			{
+				Q = 0;
+			}
 		}
-	
+
 	}
 
+	AudioSource src;
+	src.sampleRate = SampleRate;
+	src.totalFrq = infos.size();
+	src.totalTime = totalTime;
+	src.totalSample = totalSample;
+	src.infos = infos;
 
+	exportSource(&src, "D:\\sc.txt");
 
 }
 
 #include<array>
-
-
-std::array<int,3> getToneFromPSD(vector<double> pxx, vector<double> freqs, double baseFreq, int order)
-{
-	//这里计算出来的是目标频率，基频乘以谐波阶数
-	double freq = baseFreq * order;
-
-	int maxToneIndex;  //最大值所在的位置
-	double maxTone;   //最大的谐波
-
-	if (order == 1)
-	{
-
-		auto iter = std::max(pxx.begin(), pxx.end());
-		maxToneIndex = std::distance(pxx.begin(), iter);
-		maxTone = *iter;
-	}
-	else if (freq >= freqs.front() && freq <= freqs.back())
-	{
-		//查找最近的频点
-		auto iter = std::lower_bound(freqs.begin(), freqs.end(), freq);
-		auto iter2 = iter - 1;
-		if (*iter - freq > freq - *iter)
-		{
-			iter = iter2;  //说明前一个点更接近freq
-		}
-		
-		int index = std::distance(freqs.begin(), iter);
-		//按照左右分离 计算边界
-		int left = std::max(0, index - 1);
-		int right = std::min(index + 1, int(freqs.size() - 1));
-
-		iter = std::max(freqs.begin() + left, freqs.begin() + right);
-		//在分离的范围内获取最大值，刷新标志位
-		maxToneIndex = std::distance(freqs.begin(), iter);
-		maxTone = *iter;
-	}
-
-	int left = maxToneIndex - 1;
-	int right = maxToneIndex + 1;
-
-	//left 计算左侧第一个开始变大的点，  right计算右侧第一个开始变大的点
-	while (left >= 0 && pxx[left - 1] < pxx[left])
-	{
-		left -= 1;
-	}
-
-	while (right < pxx.size() && pxx[right + 1] < pxx[right])
-	{
-		right += 1;
-	}
-
-
-	return std::array<int, 3>{left, maxToneIndex, right};
-
-}
-
-double getPowerFreq(vector<double> pxx, vector<double> freqs, std::array<int, 3>indexs)
-{
-	int left = indexs[0];
-	int tonInex = indexs[1];
-	int right = indexs[2];
-
-	double v1 = 0;
-	double v2 = 0;
-
-	double calcFreq = 0.0; //计算出来的频率
-
-	if (left < right)
-	{
-		for (int i = left; i < right; i++)
-		{
-			v1 += pxx[i] * freqs[i];
-			v2 += pxx[i];
-		}
-
-		calcFreq = v1 / v2;  //计算出来的基准频率  
-	}
-
-
-	return calcFreq;
-}
-
-
-
-//计算谐波
-void computeHarm(vector<double>pxx, vector<double> freqs, float rsolu, float baseFreq,  int order )
-{
-
-	double targetFreq = baseFreq * order; //目标频率
-
-	if (order == 1)
-	{
-		pxx[0] *= 2;
-
-		std::array<int, 3> res = getToneFromPSD(pxx, freqs, baseFreq, 0);
-		int left = res[0] + 1;
-		int toneIndex = res[1];
-		int right = res[2] - 1;
-
-		for (int i = left; i < right; i++)
-		{
-			pxx[i] = 0;  //对基频清0
-		}
-
-
-		res = getToneFromPSD(pxx, freqs, baseFreq, 1);
-		 left = res[0] + 1;
-		toneIndex = res[1];
-		right = res[2] - 1;
-
-		double freq = getPowerFreq(pxx, freqs, res);  //获取频率
-
-		for (int i = left; i < right; i++)
-		{
-			pxx[i] = 0;
-		}
-	}
-	else
-	{
-		auto res = getToneFromPSD(pxx, freqs, baseFreq, 1);
-		int left = res[0] + 1;
-		int toneIndex = res[1];
-		int right = res[2] - 1;
-
-		double freq = getPowerFreq(pxx, freqs, res);  //获取频率
-
-	}
-
-
-
-}
 
 
 
@@ -358,126 +391,4 @@ void StepSweep::sweepTest(vector<float> data)
 
 
 
-}
-
-std::vector<double> Stimulus::GenerateSweepFreq(double startHz, double stopHz, Octave oct)
-{
-	if (startHz <= 0 || stopHz <= 0)
-	{
-		throw std::invalid_argument("startHz or stopHz must bigger than zero");
-
-	}
-
-	int interval = 1;  //相比R80的跳跃间隔
-	if (oct == Octave::OCT3)
-	{
-		interval = 8;
-	}
-	else if (oct == Octave::OCT6)
-	{
-		interval = 4;
-	}
-	else if (oct == Octave::OCT12)
-	{
-		interval = 2;
-	}
-	else
-	{
-		interval = 1;
-	}
-
-	bool flag = false;
-	double start = startHz, stop = stopHz;
-	if (startHz > stopHz)
-	{
-		start = stopHz;
-		stop = startHz;
-		flag = true;
-	}
-	int exp = int(log10(start));  //起始频率计算映射后的值
-	double rate = pow(10, exp);
-	double freq = start / rate;   //起始频率
-	auto iter = std::lower_bound(R80.begin(), R80.end(), static_cast<float>(freq));
-	int offset = std::distance(R80.begin(), iter);
-
-	int k = offset % interval;
-	if (k != 0)
-	{
-		offset -= k;
-	}
-
-	int size = R80.size();
-	vector<double> vec;
-
-	while (freq < stop)
-	{
-		freq = R80[offset] * rate;
-		vec.push_back(freq);
-		offset += interval;
-		if (offset >= size)
-		{
-			offset = 0;
-			exp++;
-			rate = static_cast<int>(pow(10, exp));
-		}
-	}
-
-	//倒序的
-	if (flag)
-	{
-		return vector<double>(vec.rbegin(), vec.rend());
-		
-	}
-	return vec;
-}
-
-std::vector<SweepInfo> Stimulus::createStepSweep(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, SweepType type)
-{
-	//最小持续时间单位是毫秒
-	int SampleRate = 48000;
-	vector<double> freqlst = GenerateSweepFreq(startHz, stopHz, oct);
-	vector<SweepInfo> infos;
-
-	int sampleStart = 0;
-	double durationStart = 0;
-	for (double freq : freqlst)
-	{
-		double durationCycle = minDuration * freq / 1000.0;  //计算最小持续时间下的周期数, 时间/周期= 周期数
-
-		int nCycle = 0;
-		if (minCycle < durationCycle)
-		{
-			nCycle = static_cast<int>(round(durationCycle));
-			if (nCycle > minCycle * 400) { nCycle = minCycle * 400; };
-		}
-
-		nCycle = max<int>(nCycle, minCycle);   //取较大的
-
-		SweepInfo info;
-		info.freq = freq;
-		info.cycle = nCycle;
-		info.sampleNum = static_cast<int>(info.cycle * 1.0 * SampleRate / freq + 0.5);  //采样点数,4舍5入
-		info.duration = info.sampleNum * 1.0 / SampleRate;   //每个频点持续的时间
-
-		sampleStart += info.sampleNum;
-		durationStart += info.duration;
-		infos.push_back(info);
-	}
-
-	int ExtenLen = 2048;
-
-	double Q = 0;
-	for (auto& info : infos)
-	{
-		info.Q = Q;
-		double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
-		
-		if(realCycle != info.cycle)
-		{
-			Q = Q + realCycle - info.cycle;
-		}
-	
-	}
-
-	return infos;
 }

@@ -11,14 +11,6 @@ using std::vector;
 class Harmonic
 {
 
-
-
-
-
-
-
-
-
 public:
 	static void doFFT(std::vector<double> data,  int nfft,  int sampleRate)
 	{
@@ -198,7 +190,7 @@ public:
 			}); //窗的平方和
 
 		auto v2 = std::accumulate(win.begin(), win.end(), 0.0);//窗的和
-
+		//bw = (rms/mean) ^ 2;
 		auto enbw = v1 * win.size() / (v2 * v2);
 
 		auto v3 = enbw * (sampleRate / win.size());
@@ -208,6 +200,141 @@ public:
 		return v3;  
 
 	}
+
+
+
+	static std::array<int,3> getToneFromPSD(vector<double> pxx, vector<double> freqs, double baseFreq, int order)
+	{
+		//这里计算出来的是目标频率，基频乘以谐波阶数
+		double freq = baseFreq * order;
+
+		int maxToneIndex;  //最大值所在的位置
+		double maxTone;   //最大的谐波
+
+		if (order == 1)
+		{
+
+			auto iter = std::max(pxx.begin(), pxx.end());
+			maxToneIndex = std::distance(pxx.begin(), iter);
+			maxTone = *iter;
+		}
+		else if (freq >= freqs.front() && freq <= freqs.back())
+		{
+			//查找最近的频点
+			auto iter = std::lower_bound(freqs.begin(), freqs.end(), freq);
+			auto iter2 = iter - 1;
+			if (*iter - freq > freq - *iter)
+			{
+				iter = iter2;  //说明前一个点更接近freq
+			}
+			
+			int index = std::distance(freqs.begin(), iter);
+			//按照左右分离 计算边界
+			int left = std::max(0, index - 1);
+			int right = std::min(index + 1, int(freqs.size() - 1));
+
+			iter = std::max(freqs.begin() + left, freqs.begin() + right);
+			//在分离的范围内获取最大值，刷新标志位
+			maxToneIndex = std::distance(freqs.begin(), iter);
+			maxTone = *iter;
+		}
+
+		int left = maxToneIndex - 1;
+		int right = maxToneIndex + 1;
+
+		//left 计算左侧第一个开始变大的点，  right计算右侧第一个开始变大的点
+		while (left >= 0 && pxx[left - 1] < pxx[left])
+		{
+			left -= 1;
+		}
+
+		while (right < pxx.size() && pxx[right + 1] < pxx[right])
+		{
+			right += 1;
+		}
+
+
+		return std::array<int, 3>{left, maxToneIndex, right};
+
+	}
+
+	static double getPowerFreq(vector<double> pxx, vector<double> freqs, std::array<int, 3>indexs)
+	{
+		int left = indexs[0];
+		int tonInex = indexs[1];
+		int right = indexs[2];
+
+		double v1 = 0;
+		double v2 = 0;
+
+		double calcFreq = 0.0; //计算出来的频率
+
+		if (left < right)
+		{
+			for (int i = left; i < right; i++)
+			{
+				v1 += pxx[i] * freqs[i];
+				v2 += pxx[i];
+			}
+
+			calcFreq = v1 / v2;  //计算出来的基准频率  
+		}
+
+
+		return calcFreq;
+	}
+
+
+	//计算谐波
+	static void computeHarm(vector<double>pxx, vector<double> freqs, float rsolu, float baseFreq,  int order )
+	{
+
+		double targetFreq = baseFreq * order; //目标频率
+
+		if (order == 1)
+		{
+			pxx[0] *= 2;
+
+			std::array<int, 3> res = getToneFromPSD(pxx, freqs, baseFreq, 0);
+			int left = res[0] + 1;
+			int toneIndex = res[1];
+			int right = res[2] - 1;
+
+			for (int i = left; i < right; i++)
+			{
+				pxx[i] = 0;  //对基频清0
+			}
+
+
+			res = getToneFromPSD(pxx, freqs, baseFreq, 1);
+			left = res[0] + 1;
+			toneIndex = res[1];
+			right = res[2] - 1;
+
+			double freq = getPowerFreq(pxx, freqs, res);  //获取频率
+
+			for (int i = left; i < right; i++)
+			{
+				pxx[i] = 0;
+			}
+		}
+		else
+		{
+			auto res = getToneFromPSD(pxx, freqs, baseFreq, 1);
+			int left = res[0] + 1;
+			int toneIndex = res[1];
+			int right = res[2] - 1;
+
+			double freq = getPowerFreq(pxx, freqs, res);  //获取频率
+
+		}
+
+
+
+	}
+
+
+
 
 
 };
