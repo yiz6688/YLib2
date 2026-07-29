@@ -613,9 +613,9 @@ std::expected<long, std::string> FileStream::seekCore(long offset, SeekOrigin or
 
 
 
-std::expected<void, std::string> FileStream::init(const string& path, FileAccess fileAccess, FileShare fileShare, FileMode fileMode)
+std::expected<void, std::string> FileStream::init(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode)
 {
-	if (path.empty())
+	if (filepath.empty())
 	{
 		return std::unexpected("文件路径不能为空");
 	}
@@ -677,7 +677,7 @@ std::expected<void, std::string> FileStream::init(const string& path, FileAccess
 		}
 	}
 
-	wstring wpath = Encoding::GBKToUTF16(path);
+	wstring wpath = Encoding::GBKToUTF16(filepath);
 	this->hFile = CreateFileW(wpath.c_str(),
 		dwAccess,   //文件访问权限 读写  如果是0就是不请求只是用来查询
 		dwShareMode,    //指定文件共享模式 允许其他进程读取这个文件
@@ -719,15 +719,26 @@ std::expected<void, std::string> FileStream::init(const string& path, FileAccess
 	return {};
 }
 
-std::expected<FileStream, std::string> FileStream::create(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode)
+TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
+	FileAccess fileAccess, FileShare fileShare, int bufferSize)
 {
-    //return std::expected<FileStream, std::string>();
+	TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess, fileShare, bufferSize);
+
+    return std::expected<std::unique_ptr<FileStream>, std::string>();
+}
+
+TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
+	FileAccess fileAccess, FileShare fileShare)
+{
+	TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess, fileShare);
+
 
 	return std::unexpected("");
 }
 
-std::expected<FileStream, std::string> FileStream::create(std::string_view filepath, FileAccess fileAccess, FileMode fileMode)
+TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
+	FileAccess fileAccess)
 {
-    //return std::expected<FileStream, std::string>();
+    TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess);
 	return std::unexpected("");
 }

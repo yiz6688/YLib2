@@ -1,7 +1,7 @@
 #pragma once
 #include<string>
 #include<expected>
-
+#include"TResult.h"
 class SerialPort
 {
 public:
@@ -9,27 +9,30 @@ public:
 	~SerialPort();
 
 public:
-	std::expected<void, std::string> openPort();
+	TResult<void> openPort();
 
 	void closePort();
 
-	std::expected<void, std::string> setBaudRate(int baudRate);
+	TResult<void> setBaudRate(int baudRate);
 
-	std::expected<int, std::string> writeBytes(const unsigned char* data, int length, int offset, int writeSize);
+	TResult<int> writeBytes(const unsigned char* data, int length, int offset, int writeSize);
 
-	std::expected<int, std::string> readBytes(unsigned char* buffer, int length, int offset, int readSize);
+	TResult<int> readBytes(unsigned char* buffer, int length, int offset, int readSize);
 
-	std::expected<void, std::string> setTimeOut(int readTimeout, int writeTimeout);
+	TResult<void> setTimeOut(int readTimeout, int writeTimeout);
 
-	std::expected<void, std::string> setbufferSize(int inSize, int outSize);
+	TResult<void> setbufferSize(int inSize, int outSize);
 
-	std::expected<void, std::string> setParam(int baudRate, int byteSize, int stopBits, int parity);
+	TResult<void> setParam(int baudRate, int byteSize, int stopBits, int parity);
 
-	std::expected<void, std::string> setDTR(int value);
+	TResult<void> setDTR(int value);
 
-	std::expected<void, std::string> setRTS(int value);
+	TResult<void> setRTS(int value);
 
-	std::expected<int, std::string> readableBytes();
+	TResult<int> readableBytes();
+
+public:
+	//static TResult<SerialPort> create(std::string_view portName);
 
 private:
 	//HANDLE hCom;

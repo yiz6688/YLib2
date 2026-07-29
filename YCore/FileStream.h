@@ -2,7 +2,7 @@
 #include"Stream.h"
 #include<string>
 #include<memory>
-
+#include"TResult.h"
 
 //#define CREATE_NEW          1
 //#define CREATE_ALWAYS       2
@@ -59,8 +59,6 @@ class FileStream : public Stream
 {
 public:
 
-	//FileStream(const char* path, int mode);
-
 	FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize);
 
 	FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess);
@@ -110,12 +108,18 @@ private:
 	std::expected<long, std::string> seekCore(long offset, SeekOrigin origin);
 
 public:
-	std::expected<void, std::string> init(const std::string& path, FileAccess fileAccess, FileShare fileShare, FileMode fileMode);
+	std::expected<void, std::string> init(std::string_view filepath, FileAccess fileAccess, 
+		FileShare fileShare, FileMode fileMode);
 
 public:
-	static std::expected<FileStream, std::string> create(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode);
+	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+		FileAccess fileAccess, FileShare fileShare, int bufferSize);
 
-	static std::expected<FileStream, std::string> create(std::string_view filepath, FileAccess fileAccess, FileMode fileMode);
+	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+		FileAccess fileAccess, FileShare fileShare);
+
+	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+		FileAccess fileAccess);
 
 
 private:

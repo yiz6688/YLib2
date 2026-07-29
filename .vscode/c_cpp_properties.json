@@ -11,6 +11,7 @@
                 "_UNICODE"
             ],
             "compilerPath": "D:/DevTools/mingw64/bin/g++.exe",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "intelliSenseMode": "windows-gcc-x64",
             "cppStandard": "c++23",
             "cStandard": "c23"

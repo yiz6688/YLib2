@@ -3,6 +3,7 @@
 #include"WaveFormat.h"
 #include"SampleConv.h"
 #include<memory>
+#include"TResult.h"
 
 class WaveWriter
 {
@@ -14,6 +15,12 @@ public:
 	WaveWriter(const WaveFormat& _waveFormat, const std::string& filePath);
 
 	virtual ~WaveWriter();
+
+public:
+	//static TPResult<WaveWriter> create(const WaveFormat& fmt, Stream* stream);
+	
+	//static TPResult<WaveWriter> create(const WaveFormat& fmt, std::string_view filepath);
+
 
 	virtual std::expected<long, std::string> write(char* buffer, int size, int offset, int count);
 

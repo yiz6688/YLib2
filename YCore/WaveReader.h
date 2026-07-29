@@ -4,6 +4,7 @@
 #include<memory>
 #include<vector>
 #include"SampleConv.h"
+#include"TResult.h"
 
 struct RIFFChunk
 {
@@ -29,6 +30,9 @@ public:
 
 	std::vector<char> getChunkData(RIFFChunk chunk);
 
+public:
+	//static TPResult<WaveReader> create(Stream* stream);
+	//static TPResult<WaveReader> create(std::string_view filePath);
 
 public:
 

@@ -228,13 +228,13 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 			nCycle = static_cast<int>(durationCycle);
 			if(type == 0)
 			{
-				if(nCycle - durationCycle > 0.5)
+				if(durationCycle - nCycle > 0.5)
 				{
 					nCycle++;
 				}
 			}else
 			{
-				if(nCycle - durationCycle > 0)
+				if(durationCycle - nCycle > 0)
 				{
 					nCycle++;
 				}	
