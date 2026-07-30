@@ -15,9 +15,9 @@ constexpr int MAXPATHLEN = 512;
 constexpr int MAXDRVNAMELEN = 128;
 
 
-static std::vector<asioInfo> getASIOInfos()
+static std::vector<ASIOInfo> getASIOInfos()
 {
-	std::vector<asioInfo> asioInfos;
+	std::vector<ASIOInfo> asioInfos;
 	HKEY hkEnum = nullptr;
 	HKEY hkSub = 0;
 	long cr;
@@ -81,7 +81,7 @@ long ASIOManager::getDeviceNum()
 	return this->asioInfos.size();
 }
 
-asioInfo* ASIOManager::getDeviceInfo(unsigned index)
+ASIOInfo* ASIOManager::getDeviceInfo(unsigned index)
 {
 	if (index >= this->asioInfos.size() || index < 0)
 	{
@@ -89,7 +89,7 @@ asioInfo* ASIOManager::getDeviceInfo(unsigned index)
 	}
 	return &this->asioInfos[index];
 }
-asioInfo* ASIOManager::operator[](unsigned index)
+ASIOInfo* ASIOManager::operator[](unsigned index)
 {
 	if (index >= this->asioInfos.size() || index < 0)
 	{
@@ -100,7 +100,7 @@ asioInfo* ASIOManager::operator[](unsigned index)
 
 std::expected<ASIOClient*, std::string> ASIOManager::createClient(unsigned index)
 {
-	asioInfo* info = this->getDeviceInfo(index);
+	ASIOInfo* info = this->getDeviceInfo(index);
 
 	auto result = ASIODriver::createDriver(info->clsid);
 	if (result)

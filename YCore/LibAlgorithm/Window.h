@@ -10,20 +10,21 @@
 //余弦窗
 class CosineWindow
 {
+public:    
     //这些窗系数使用通用方式里面进行
-    std::array<double, 5> Rect{ 1.0 };                       //特例余弦窗
-    std::array<double, 5> Hann{ 0.5, -0.5 };                 //端点完全降为0， 旁瓣衰减-31db
-    std::array<double, 5> Hamming{ 0.54, -0.46 };            //端点不为0 大于0.08，最小化第一旁瓣 大约-41db
-    std::array<double, 5> Blackman{ 0.42, -0.5, 0.08 };      //旁瓣大约-58db，主瓣较宽
-    std::array<double, 5> Blackman_Harris{ 0.35875, -0.48829, 0.14128, -0.01168 };  //旁瓣约等于-92db，常用于高动态范围分析
-    std::array<double, 5> Nuttall{ 0.3635819, -0.4891775, 0.1365995, -0.0106411 }; //旁瓣约等于-93db，比哈里斯更平滑
-    std::array<double, 5> FlatTop{ 1.0, -1.9308742, 1.2864454, -0.3878014, 0.0322299 };  //主瓣极宽，但通带平坦，用于幅度精确测量
+    static constexpr std::array<double, 5> Rect{ 1.0 };                       //特例余弦窗
+    static constexpr std::array<double, 5> Hann{ 0.5, -0.5 };                 //端点完全降为0， 旁瓣衰减-31db
+    static constexpr std::array<double, 5> Hamming{ 0.54, -0.46 };            //端点不为0 大于0.08，最小化第一旁瓣 大约-41db
+    static constexpr std::array<double, 5> Blackman{ 0.42, -0.5, 0.08 };      //旁瓣大约-58db，主瓣较宽
+    static constexpr std::array<double, 5> Blackman_Harris{ 0.35875, -0.48829, 0.14128, -0.01168 };  //旁瓣约等于-92db，常用于高动态范围分析
+    static constexpr std::array<double, 5> Nuttall{ 0.3635819, -0.4891775, 0.1365995, -0.0106411 }; //旁瓣约等于-93db，比哈里斯更平滑
+    static constexpr std::array<double, 5> FlatTop{ 1.0, -1.9308742, 1.2864454, -0.3878014, 0.0322299 };  //主瓣极宽，但通带平坦，用于幅度精确测量
     //1.0, -1.93, 1.29, -0.388, 0.028
 
 	
 public:
 
-	std::vector<double> getWindiow(int N, std::array<double, 5>& coef)
+	std::vector<double> getWindiow(int N, const std::array<double, 5>& coef)
 	{
 		//ofstream ofs("D:\\123.txt");
 		std::vector<double> win(N);

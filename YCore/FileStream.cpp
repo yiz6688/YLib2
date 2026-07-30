@@ -12,14 +12,14 @@ constexpr int defaultBufferSize = 4096;  //默认设置为4k
 //检查返回值如果失败返回错误
 #define CHECK_RESULT(result) if (!result) { return std::unexpected{ result.error() }; }
 
-FileStream::FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize)
+FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize)
 	: hFile(INVALID_HANDLE_VALUE), _capacity(bufferSize < 0 ? defaultBufferSize : bufferSize)
 {
 	this->_readable = true;
 	this->_writeable = true;
 	this->_seekable = true;
 
-	if (path.empty())
+	if (filepath.empty())
 	{
 		//throw invalid_argument("文件字符串不能为空");
 	}
@@ -31,7 +31,7 @@ FileStream::FileStream(const std::string& path, FileMode fileMode, FileAccess fi
 	SetErrorMode(1); //系统不弹窗，将错误发送给调用进程
 
 
-	auto result = this->init(path, fileAccess, fileShare, fileMode);
+	auto result = this->init(filepath, fileAccess, fileShare, fileMode);
 	if (!result)
 	{
 		println("{}", result.error());
@@ -39,13 +39,13 @@ FileStream::FileStream(const std::string& path, FileMode fileMode, FileAccess fi
 	}
 }
 
-FileStream::FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess)
-	:FileStream(path, fileMode, fileAccess
+FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess)
+	:FileStream(filepath, fileMode, fileAccess
 		, FileShare::Read, defaultBufferSize)
 {}
 
-FileStream::FileStream(const string& path, FileMode fileMode)
-	:FileStream(path, fileMode
+FileStream::FileStream(const string_view filepath, FileMode fileMode)
+	:FileStream(filepath, fileMode
 		, (fileMode == FileMode::Append ? FileAccess::Write : FileAccess::ReadWrite)
 		, FileShare::Read, defaultBufferSize)
 {}
@@ -722,7 +722,7 @@ std::expected<void, std::string> FileStream::init(std::string_view filepath, Fil
 TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
 	FileAccess fileAccess, FileShare fileShare, int bufferSize)
 {
-	TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess, fileShare, bufferSize);
+	TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess, fileShare, bufferSize));
 
     return std::expected<std::unique_ptr<FileStream>, std::string>();
 }
@@ -730,7 +730,7 @@ TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode file
 TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
 	FileAccess fileAccess, FileShare fileShare)
 {
-	TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess, fileShare);
+	TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess, fileShare, defaultBufferSize));
 
 
 	return std::unexpected("");
@@ -739,6 +739,7 @@ TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode file
 TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
 	FileAccess fileAccess)
 {
-    TPtr<FileStream> ptr = std::make_unique<FileStream>(filepath, fileMode, fileAccess);
+    TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess));
+	
 	return std::unexpected("");
 }

@@ -10,6 +10,8 @@
 #include<fstream>
 #include"FindDelay.h"
 #include"Harmonic.h"
+#include"Window.h"
+#include"FFT.h"
 
 using namespace std;
 
@@ -205,7 +207,7 @@ void exportSource(AudioSource* src, string filepath)
 }
 
 
-void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
+AudioSource StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
 	//最小持续时间单位是毫秒
 	int SampleRate = 48000;
@@ -315,32 +317,99 @@ void StepSweep::GenerateSweepWave(double startHz, double stopHz, int minCycle, i
 	src.totalSample = totalSample;
 	src.infos = infos;
 
-	exportSource(&src, "D:\\sc.txt");
+	//exportSource(&src, "D:\\sc.txt");
 
+	return src;
 }
 
-#include<array>
-
-
-
-
-
-
-void StepSweep::sweepTest(vector<float> data)
+//创建信号
+std::vector<double> StepSweep::createWave(AudioSource *src)
 {
+	std::vector<double> samples;
+	samples.reserve(src->totalSample);
+
+	for(auto& info: src->infos)
+	{
+		for(int i=0; i< info.sampleNum; i++)
+		{
+			double t =  (info.sampleStart + i) * info.freq / src->sampleRate   + info.Q;
+			double value = sin(2 * M_PI * t);
+			samples.push_back(value);
+		}
+	}
+
+    return samples;
+}
+
+void StepSweep::sweepTest(vector<double> wav, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
+{
+	int sampleRate = 48000;
 	//这里是不是要核对一下 假如录音文件长度不够，只有半截，或者其他场景的相关问题。
 	FindDelay fd;
-	//查找音频文件起始位置
-	//int findDelay = fd.corr_delay(data, this->waveData);
-	int findDelay = 0;
-	int sampleRate = 48000;
 
+	auto src = this->GenerateSweepWave(startHz, stopHz, minCycle, minDuration, oct, type);
+	auto stdWave = this->createWave(&src);
+	//查找音频文件起始位置
+	int findDelay = fd.gcc_phat_delay(wav, stdWave);
 	float rate = 0.05;
+
+	std::vector<int> sample2(src.totalFrq);  //缓存cut后的点。
+	int cutCycle = 0;
+	int maxLen = 0;
+
+	for(int i=0; i< src.totalFrq; i++)
+	{
+		auto& info = src.infos[i];  
+		cutCycle = info.cycle - 1;
+
+		sample2[i] =  static_cast<int>(info.sampleNum * cutCycle / info.cycle);
+		if(maxLen < sample2[i])
+		{
+			maxLen = sample2[i];
+		}
+	}
+
+	
+	std::vector<double> vec(maxLen); //计算FFT的输入空间。
+	int offset = findDelay;
+
+	for(int i= 0;i<src.totalFrq; i++)
+	{
+		
+		int fftLen = sample2[i];
+		CosineWindow window;
+		auto win = window.getWindiow(fftLen, CosineWindow::Blackman_Harris); //使用黑人哈里斯窗
+		
+		auto& info = src.infos[i];
+
+		for(int i=0; i< fftLen; i++)
+		{
+			vec[i] = wav[findDelay + info.sampleStart] * win[i];  //加窗
+		}
+
+		FFT fft(fftLen);
+		fft.fft(vec); //进行fft;
+
+		auto powerWin = std::accumulate(win.begin(), win.end(), 0.0, [](auto a, auto b){
+			return a*a + b*b;
+		});  //窗的能量。
+
+
+
+	}
+
+
+
+
+
+
+
+
 
 	int size = this->sweepInfos.size();
 	this->harms.resize(size); //设置这么多内容
 
-	int offset = findDelay;
+	
 
 	for (int i = 0; i < size; i++)
 	{

@@ -575,8 +575,9 @@ std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid)
 		{
 			if (IsEqualCLSID(pASIODriver->asioID, clsid) == TRUE)
 			{
-				pASIODriver->refCounter++;
-				return pASIODriver.get();
+				//pASIODriver->refCounter++;
+				//return pASIODriver.get();
+				return std::unexpected("不允许重复创建驱动");
 			}
 		}
 		else
@@ -605,7 +606,7 @@ std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid)
 
 
 	entity.pASIODriver = std::move(pASIODriver);
-	entity.pASIODriver->refCounter++;  //新创建了驱动，引用计数+1
+	//entity.pASIODriver->refCounter++;  //新创建了驱动，引用计数+1
 
 
 
@@ -630,8 +631,8 @@ std::expected<void, std::string> ASIODriver::releaseDriver(ASIODriver* driver)
 		{
 			if (IsEqualCLSID(pASIODriver->asioID, driver->asioID) == TRUE)
 			{
-				pASIODriver->refCounter--;
-				if (pASIODriver->refCounter == 0)
+				//pASIODriver->refCounter--;
+				//if (pASIODriver->refCounter == 0)
 				{
 					pASIODriver.reset();//释放资源
 					return {};

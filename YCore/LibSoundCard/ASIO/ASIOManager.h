@@ -6,11 +6,7 @@
 #include<expected>
 
 //驱动信息
-struct asioInfo
-{
-	const CLSID clsid;
-	const std::string driverName;
-};
+
 
 class ASIOManager
 {
@@ -22,13 +18,13 @@ public:
 
 	long getDeviceNum();
 
-	asioInfo* getDeviceInfo(unsigned index);
+	ASIOInfo* getDeviceInfo(unsigned index);
 
-	asioInfo* operator[](unsigned index);
+	ASIOInfo* operator[](unsigned index);
 
 	std::expected<ASIOClient*, std::string> createClient(unsigned index);
 
 private:
-	std::vector<asioInfo> asioInfos;
+	std::vector<ASIOInfo> asioInfos;
 
 };

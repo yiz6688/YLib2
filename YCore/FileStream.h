@@ -1,5 +1,6 @@
 #pragma once
 #include"Stream.h"
+#include<string_view>
 #include<string>
 #include<memory>
 #include"TResult.h"
@@ -59,11 +60,11 @@ class FileStream : public Stream
 {
 public:
 
-	FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize);
+	FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize);
 
-	FileStream(const std::string& path, FileMode fileMode, FileAccess fileAccess);
+	FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess);
 
-	FileStream(const std::string& path, FileMode fileMode);
+	FileStream(const std::string_view filepath, FileMode fileMode);
 
 	FileStream(FileStream&& other) noexcept;
 
@@ -123,6 +124,12 @@ public:
 
 
 private:
+
+	std::string filepath;
+	FileMode fileMode;
+	FileAccess fileAccess;
+	FileShare fileShare;
+	
 	void* hFile;
 	std::unique_ptr<char[]> _buffer;
 	int _capacity;

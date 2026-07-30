@@ -89,7 +89,7 @@ public:
 	//驱动偏移量
 	int driverOffset = 0;
 
-	int refCounter;  //引用计数，记录当前有多少个录音或播放实例在使用驱动
+	//int refCounter;  //引用计数，记录当前有多少个录音或播放实例在使用驱动
 
 	CLSID asioID;
 

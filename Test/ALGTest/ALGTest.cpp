@@ -13,13 +13,30 @@ void corrTest()
 
     auto corr = fd.correlate(x, y);
 
-    println("长度:{}", corr.size());
+    for(auto x : corr)
+    {
+        print("{:.3f} ", x);
+    }
+    println();
+    corr = fd.correlate2(x, y);
+
     for(auto x : corr)
     {
         print("{:.3f} ", x);
     }
 
 }
+
+
+void corrTest2()
+{
+    std::vector<double> x{1.0, 2.0, 3.0, 4.0, 5.0};
+    std::vector<double> y{3.0, 4.0, 5.0};
+    FindDelay fd;
+
+    fd.gcc_phat_delay(x, y);
+}
+
 
 void sweepTest()
 {
@@ -33,7 +50,7 @@ int main()
 {
     //println("algTest");
 
-    sweepTest();
-
+    //sweepTest();
+    corrTest2();
 
 }

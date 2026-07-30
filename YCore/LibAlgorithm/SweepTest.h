@@ -43,6 +43,13 @@ struct AudioSource
 	int totalSample;
 	double totalTime;
 
+	double startHz;
+	double stopHz;
+	int minCycle;
+	int minDuration;
+	Octave octave;
+
+
 	std::vector<SweepInfo> infos;
 };
 
@@ -57,7 +64,13 @@ struct Harm
 
 	std::vector<double> values;  //谐波的值
 
+};
 
+
+struct AudioResult
+{
+
+	std::vector<Harm> harms;
 };
 
 
@@ -70,9 +83,11 @@ public:
 	std::vector<double> GenerateSweepFreq(double startHz, double stopHz, Octave oct);
 	std::vector<double> GenerateSweepFreq2(double startHz, double stopHz, Octave oct);
 
-	void GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
+	AudioSource GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
-	void sweepTest(std::vector<float> data);
+	std::vector<double> createWave(AudioSource* src);
+
+	void sweepTest(std::vector<double> data, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
 private:
 	std::vector<SweepInfo> sweepInfos;	//频率扫描信息列表

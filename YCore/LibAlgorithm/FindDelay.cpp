@@ -6,8 +6,9 @@
 #include<bit>
 #include<span>
 #include<memory>
+#include"FFT.h"
+#include<print>
 
-using cpx = std::complex<double>;
 
 std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> y)
 {
@@ -75,103 +76,91 @@ std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> 
 	return corr;
 }
 
+std::vector<double> FindDelay::correlate2(std::span<double> x, std::span<double> y)
+{
+	auto xLen = x.size();
+	auto yLen=  y.size();
+    auto sampleNum = xLen + yLen - 1;
+    int fftSize =  std::bit_ceil(sampleNum);  //等价于nextpow2
 
-int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y) {
-    if (x.size() != y.size()) {
-        //throw std::invalid_argument("信号长度必须相等");
-    }
-    size_t N = x.size();
+    FFT fft(fftSize);
+    
+    auto TD = fft.getTD(); //指向时域
+    auto FD = fft.getFD(); //指向频域
+    std::vector<cpx> temp(FD.size());       //缓存
 
-    // 零填充到 2N 以避免循环卷积（提高分辨率）
-    size_t fft_size = 1;
-    while (fft_size < 2 * N) fft_size <<= 1;
+    fft.fft(x);
+    std::copy(FD.begin(), FD.end(), temp.begin());  //缓存x的fft结果
 
-    // 分配内存
-    fftw_complex* in1 = fftw_alloc_complex(fft_size);
-    fftw_complex* in2 = fftw_alloc_complex(fft_size);
-    fftw_complex* out1 = fftw_alloc_complex(fft_size);
-    fftw_complex* out2 = fftw_alloc_complex(fft_size);
-    double* corr = fftw_alloc_real(fft_size);
+    fft.fft(y);
 
-    // 填充输入（其余补零）
-    for (size_t i = 0; i < fft_size; ++i) {
-        in1[i][0] = (i < N) ? x[i] : 0.0;
-        in1[i][1] = 0.0;
-        in2[i][0] = (i < N) ? y[i] : 0.0;
-        in2[i][1] = 0.0;
+    for(int i=0; i< FD.size() ;i++)
+    {
+        FD[i] = temp[i] * std::conj(FD[i]);//x*conj(y)  共轭乘。
     }
 
-    // 创建 FFT 计划
-    fftw_plan p1 = fftw_plan_dft_1d(fft_size, in1, out1, FFTW_FORWARD, FFTW_ESTIMATE);
-    fftw_plan p2 = fftw_plan_dft_1d(fft_size, in2, out2, FFTW_FORWARD, FFTW_ESTIMATE);
-    fftw_plan p3 = fftw_plan_dft_c2r_1d(fft_size, in1, corr, FFTW_BACKWARD);
+    fft.ifft(FD);
 
-    // 执行正向 FFT
-    fftw_execute(p1);
-    fftw_execute(p2);
-
-    // 计算 PHAT 加权：X1 * conj(X2) / |X1 * conj(X2)|
-    for (size_t k = 0; k < fft_size; ++k) {
-        double re1 = out1[k][0], im1 = out1[k][1];
-        double re2 = out2[k][0], im2 = out2[k][1];
-
-        // conj(X2) = re2 - j*im2
-        double cross_re = re1 * re2 + im1 * im2;  // real(X1 * conj(X2))
-        double cross_im = im1 * re2 - re1 * im2;  // imag(X1 * conj(X2))
-
-        double magnitude = std::sqrt(cross_re * cross_re + cross_im * cross_im);
-
-        // 避免除零：若幅度太小，设为 0（或跳过）
-        if (magnitude < 1e-12) {
-            in1[k][0] = 0.0;
-            in1[k][1] = 0.0;
-        }
-        else {
-            // 归一化为单位复数（仅保留相位）
-            in1[k][0] = cross_re / magnitude;  // 实部
-            in1[k][1] = cross_im / magnitude;  // 虚部
-        }
+    std::vector<double> corr(sampleNum); 
+    int offset = 0;
+    for(int i = fftSize - yLen + 1; i < fftSize; i++)
+    {
+        corr[offset++] = TD[i] / fftSize;
     }
 
-    // 执行逆 FFT（注意：FFTW_BACKWARD 不做 1/N 归一化）
-    fftw_execute(p3);
-
-    // 归一化（可选，不影响峰值位置）
-    for (size_t i = 0; i < fft_size; ++i) {
-        corr[i] /= fft_size;
+    for(int i = 0; i< xLen; i++)
+    {
+        corr[offset++] = TD[i] / fftSize;
     }
 
-    // 在有效范围 [0, 2*N-1] 内找最大值
-    size_t max_idx = 0;
-    double max_val = corr[0];
-    size_t search_len = 2 * N - 1;
-    for (size_t i = 1; i < search_len; ++i) {
-        if (corr[i] > max_val) {
-            max_val = corr[i];
-            max_idx = i;
-        }
+	return corr;
+}
+
+int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y) 
+{
+	auto xLen = x.size();
+	auto yLen=  y.size();
+    auto M = std::max(xLen, yLen);
+    auto sampleNum = 2*M - 1;
+    int fftSize =  std::bit_ceil(static_cast<unsigned>(sampleNum));  //等价于nextpow2
+
+    FFT fft(fftSize);
+
+    auto TD = fft.getTD(); //指向时域
+    auto FD = fft.getFD(); //指向频域
+    std::vector<cpx> temp(FD.size());       //缓存
+    
+    
+    fft.fft(x);
+    std::copy(FD.begin(), FD.end(), temp.begin());  //缓存x的fft结果
+
+    fft.fft(y);
+
+    for(int i=0; i< FD.size() ;i++)
+    {
+        FD[i] = temp[i] * std::conj(FD[i]);//x*conj(y)  共轭乘。
+        FD[i] /= abs(FD[i]);
     }
 
-    // 转换为时延（索引 0 ~ N-1：x2 超前；N ~ 2N-2：x2 滞后）
-    int delay = static_cast<int>(max_idx);
-    if (delay > static_cast<int>(N - 1)) {
-        delay -= static_cast<int>(fft_size); // 处理负延迟（可选）
-        // 但通常我们只关心 [-N+1, N-1]，所以也可以直接：
-        // delay = delay - (N - 1);
+    fft.ifft(FD);
+
+    for(int i=0; i< fftSize; i++)
+    {
+        std::println("{:.12f}", TD[i]);
     }
-    // 更直观的方式：中心在 N-1
-    delay = static_cast<int>(max_idx) - static_cast<int>(N - 1);
 
-    // 清理资源
-    fftw_destroy_plan(p1);
-    fftw_destroy_plan(p2);
-    fftw_destroy_plan(p3);
-    fftw_free(in1);
-    fftw_free(in2);
-    fftw_free(out1);
-    fftw_free(out2);
-    fftw_free(corr);
+    std::vector<double> corr(sampleNum); 
+    int offset = 0;
+    for(int i = fftSize - yLen + 1; i < fftSize; i++)
+    {
+        corr[offset++] = TD[i] / fftSize;
+    }
 
-    return delay;
+    for(int i = 0; i< xLen; i++)
+    {
+        corr[offset++] = TD[i] / fftSize;
+    }
+
+	return 0;
 }
 
