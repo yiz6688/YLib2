@@ -85,9 +85,12 @@ public:
 
 	AudioSource GenerateSweepWave(double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
-	std::vector<double> createWave(AudioSource* src);
+	std::vector<double> createWave(AudioSource* src, int type);
 
-	void sweepTest(std::vector<double> data, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
+
+	std::vector<double> tukeyWin(int n, double ratio);
+
+	void sweepTest(std::vector<double>& data, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type);
 
 private:
 	std::vector<SweepInfo> sweepInfos;	//频率扫描信息列表

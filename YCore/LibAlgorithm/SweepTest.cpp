@@ -323,34 +323,97 @@ AudioSource StepSweep::GenerateSweepWave(double startHz, double stopHz, int minC
 }
 
 //创建信号
-std::vector<double> StepSweep::createWave(AudioSource *src)
+std::vector<double> StepSweep::createWave(AudioSource *src, int type)
 {
 	std::vector<double> samples;
-	samples.reserve(src->totalSample);
+	int postLen = 0;
+	int fakeLen = 2048;
+	int offset = 0;
+	if(type == 0)
+	{
+		postLen = src->sampleRate * 10 / 1000;
+		samples.reserve(src->totalSample + postLen + fakeLen + 1);
+		offset = 1;
+		samples.push_back(0);
+	}else
+	{
+		samples.reserve(src->totalSample);
+	}
 
 	for(auto& info: src->infos)
 	{
-		for(int i=0; i< info.sampleNum; i++)
+		for(int i=offset; i< info.sampleNum + offset; i++)
 		{
-			double t =  (info.sampleStart + i) * info.freq / src->sampleRate   + info.Q;
+			double t =  i * info.freq / src->sampleRate   + info.Q;
 			double value = sin(2 * M_PI * t);
 			samples.push_back(value);
 		}
 	}
 
+	if(type == 0)
+	{
+		auto win = this->tukeyWin(postLen * 2, 0.986);
+		auto last = src->infos.back();
+		for(int i=0; i<postLen; i++)
+		{
+			double t = (i + offset) * last.freq / src->sampleRate   + last.Q;
+			double value = sin(2*M_PI *t) * win[i];
+			samples.push_back(value);
+		}
+
+
+		for(int i=0; i<fakeLen;i++)
+		{
+			samples.push_back(0);
+		}
+
+	}
+
+
     return samples;
 }
 
-void StepSweep::sweepTest(vector<double> wav, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
+std::vector<double> StepSweep::tukeyWin(int n, double ratio)
+{
+	std::vector<double> data(n);
+	auto per = ratio / 2;
+	auto low = per*(n-1) + 1;
+	auto hig = n - low + 1;
+
+	for(int i=0; i<n;i++)
+	{
+		double t = i * 1.0 / n;
+		if(i < low)
+		{
+			data[i] = (1 + cos(M_PI / per *(t-per))) / 2;
+		}else if( i> hig)
+		{
+			data[i] = (1 + cos(M_PI / per*(t-1+per))) / 2;
+		}else
+		{
+			data[i] = 1;
+		}
+	}
+
+
+
+    return std::vector<double>();
+}
+
+void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
 	int sampleRate = 48000;
 	//这里是不是要核对一下 假如录音文件长度不够，只有半截，或者其他场景的相关问题。
 	FindDelay fd;
 
 	auto src = this->GenerateSweepWave(startHz, stopHz, minCycle, minDuration, oct, type);
-	auto stdWave = this->createWave(&src);
+	auto stdWave = this->createWave(&src, type);
 	//查找音频文件起始位置
 	int findDelay = fd.gcc_phat_delay(wav, stdWave);
+
+	std::println("延迟: {}", findDelay);
+
+
 	float rate = 0.05;
 
 	std::vector<int> sample2(src.totalFrq);  //缓存cut后的点。
@@ -460,4 +523,83 @@ void StepSweep::sweepTest(vector<double> wav, double startHz, double stopHz, int
 
 
 
+}
+
+
+array<double, 5> blackmanharris{ 0.35875, 0.48829, 0.14128, 0.01168};
+array<double, 5> blackman{ 0.42, 0.50, 0.08 };
+
+
+vector<double> getWindiow(int N, array<double,5>& coef)
+{
+	//ofstream ofs("D:\\123.txt");
+	vector<double> win(N);
+	double fact = 1.0*2*M_PI / (N-1);
+	for (int i = 0; i < N; i++)
+	{
+		win[i] = coef[0] - coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i) 
+			- coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
+		//ofs << win[i] << endl;
+	}
+
+	return win;
+}
+
+
+
+bool NoistTest(std::vector<double>& wavdata, int sampleRate)
+{
+	int spkLen = wavdata.size();
+
+	int nfft = 4096;
+	int nout = nfft / 2 + 1;  //fft输出
+	vector<double> win = getWindiow(nfft, blackman);
+	int noverlap = 0.5 * nfft;  //重叠长度
+
+	int nFrame = (spkLen - noverlap)/(nfft - noverlap) ; //数据帧长度
+
+	fftw_complex* out;
+	vector<double> frame(nfft);
+	vector<double> result(nout);   //存储结果
+	vector<double> freqs(nout);    //频率
+	std::fill_n(result.begin(),nout, 0.0);  //清0
+	out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * nout);
+	fftw_plan p= fftw_plan_dft_r2c_1d(nfft, frame.data(), out, FFTW_ESTIMATE);
+
+	for (int i = 0; i < nFrame; i++)
+	{
+		auto iter =wavdata.begin() + i * (nfft - noverlap); //帧起始位置
+		for (int j = 0; j < nfft; j++)   //加窗
+		{
+			frame[j] = *(iter + j) * win[j];
+		}
+
+		fftw_execute(p);
+
+		for (int j = 0; j < nout; j++)
+		{
+			result[j]+= sqrt(out[j][0] * out[j][0] + out[j][1] * out[j][1])/nfft;
+			result[j] *= 4.762/(nFrame);   //2*2.381
+		}
+	}
+
+	for (int i = 0; i < nout; i++)
+	{
+		freqs[i] = sampleRate * 1.0*i / nfft;
+	}
+
+	std::vector<double> y(nout);
+	
+	for (int i = 0; i < nout; i++)
+	{
+		y[i] = 20 * log10(result[i]);
+	}
+	
+
+	fftw_destroy_plan(p);
+	fftw_cleanup();
+	fftw_free(out);
+
+
+	return true;
 }

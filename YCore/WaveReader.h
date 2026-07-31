@@ -52,6 +52,8 @@ public:
 
 public:
 	virtual std::expected<long, std::string> readSamples(float* buffer, int nsamples);
+
+	virtual std::expected<long, std::string> readSamples64(double* buffer, int nsamples);
 	
 	virtual std::expected<long, std::string>  read(char* buffer, int size);
 

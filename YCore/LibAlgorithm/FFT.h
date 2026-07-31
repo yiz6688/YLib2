@@ -91,3 +91,84 @@ private:
 };
 
 
+class FFT2
+{
+
+public:
+    FFT2(int fftSize)
+    {
+
+        fftw_complex* td = fftw_alloc_complex(fftSize);
+        this->tdSpan = std::span<cpx>(reinterpret_cast<cpx*>(td), fftSize);
+
+        fftw_complex *fd = fftw_alloc_complex(fftSize);
+        this->fdSpan = std::span<cpx>(reinterpret_cast<cpx*>(fd), fftSize);
+
+        this->pfft = fftw_plan_dft_1d(fftSize, td, fd, FFTW_FORWARD, FFTW_ESTIMATE);
+        this->pifft = fftw_plan_dft_1d(fftSize, fd, td, FFTW_BACKWARD, FFTW_ESTIMATE);
+    }
+
+
+    ~FFT2()
+    {
+        cpx* td = this->tdSpan.data();
+        cpx* fd = this->fdSpan.data();
+
+        fftw_free(td);
+        fftw_free(fd);
+
+        fftw_destroy_plan(this->pfft);
+        fftw_destroy_plan(this->pifft);
+    }
+
+
+    void fft(std::span<double> input)
+    {
+        
+        for(int i=0;i<input.size(); i++)
+        {
+            this->tdSpan[i].real(input[i]);
+            this->tdSpan[i].imag(0);
+        }
+        
+        int len = input.size();
+        std::fill(this->tdSpan.begin() + len, this->tdSpan.end(), cpx());
+
+        fftw_execute(this->pfft);
+    }
+
+    void ifft(std::span<cpx> input)
+    {
+        if(input.data() != this->fdSpan.data())
+        {
+            std::copy(input.begin(), input.end(),  this->fdSpan.begin());
+        }
+        int len = input.size();
+        std::fill(this->fdSpan.begin() + len, this->fdSpan.end(), cpx());
+
+        fftw_execute(this->pifft);
+    }
+
+    int getFFTSize()
+    {
+        return this->tdSpan.size();
+    }
+
+    std::span<cpx> getTD()
+    {
+        return this->tdSpan;
+    }
+
+    std::span<cpx> getFD()
+    {
+        return this->fdSpan;
+    }
+
+private:
+    std::span<cpx> tdSpan;      //time_domain ,时域信号
+    std::span<cpx>  fdSpan;    //freq_domain ,频域信号    
+
+    fftw_plan pfft;
+    fftw_plan pifft;
+
+};

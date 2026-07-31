@@ -320,7 +320,7 @@ std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsam
 		return readSamples;
 	}
 
-
+	int nSample = 0;
 	if (nBytes == 2)
 	{
 		float* ptr = buffer;
@@ -337,9 +337,10 @@ std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsam
 
 			auto result = this->_stream->read(this->convBuffer, rdLen * 2);   //指向调用，预防子类重写后循环调用
 			CHECK_RESULT(result);
-			SampleConv::Int16toFloat(sptr, result.value(), ptr);
+			nSample = result.value() / 2;
+			SampleConv::Int16toFloat(sptr, nSample, ptr);
 			
-			readSamples += result.value() / 2;
+			readSamples += nSample;
 		};
 		return readSamples;
 	}
@@ -358,7 +359,8 @@ std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsam
 
 			auto result = this->_stream->read(this->convBuffer, rdLen * 3);   //指向调用，预防子类重写后循环调用
 			CHECK_RESULT(result);
-			SampleConv::Int24BytetoFloat(this->convBuffer, result.value(), ptr);
+			nSample = result.value() / 3;
+			SampleConv::Int24BytetoFloat(this->convBuffer, nSample, ptr);
 
 			readSamples += result.value() / 3;
 		};
@@ -367,7 +369,7 @@ std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsam
 	else if (nBytes == 4)
 	{
 		float* ptr = buffer;
-		auto len = this->bufferLen / 2;  //缓冲区有效长度
+		auto len = this->bufferLen / 4;  //缓冲区有效长度
 		int* iptr = reinterpret_cast<int*>(this->convBuffer);  //转换缓冲区
 		rdLen = len;
 		for (start = 0; start < nsamples; start += len)
@@ -380,9 +382,73 @@ std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsam
 
 			auto result = this->_stream->read(this->convBuffer, rdLen * 4);   //指向调用，预防子类重写后循环调用
 			CHECK_RESULT(result);
-			SampleConv::Int32toFloat(iptr, result.value(), ptr);
+			nSample = result.value() / 4;
+			SampleConv::Int32toFloat(iptr, nSample, ptr);
 
-			readSamples += result.value() / 4;
+			readSamples += nSample;
+		};
+		return readSamples;
+	}
+	else
+	{
+		throw std::logic_error("暂不支持的格式");
+	}
+	return 0;
+
+}
+
+std::expected<long, std::string> WaveReader::readSamples64(double *buffer, int nsamples)
+{
+	int nBytes = this->_fmt->getBlockAlign() / this->_fmt->getChannels();
+	int nret = 0;
+	int rdLen = 0;
+	int start = 0;
+	long readSamples = 0;
+	
+	int nSample = 0;
+	if (nBytes == 2)
+	{
+		double* ptr = buffer;
+		auto len = this->bufferLen / 2;  //缓冲区有效长度
+		short* sptr = reinterpret_cast<short*>(this->convBuffer);  //转换缓冲区
+		rdLen = len;
+		for (start = 0; start < nsamples; start += len)
+		{
+			ptr = buffer + readSamples;
+			if (start + rdLen >= nsamples)
+			{
+				rdLen = nsamples - start;
+			}
+
+			auto result = this->_stream->read(this->convBuffer, rdLen * 2);   //指向调用，预防子类重写后循环调用
+			CHECK_RESULT(result);
+			nSample = result.value() / 2;
+			SampleConv::IntToDouble(sptr, nSample, ptr);
+			
+			readSamples += nSample;
+		};
+		return readSamples;
+	}
+	else if (nBytes == 4)
+	{
+		double* ptr = buffer;
+		auto len = this->bufferLen / 4;  //缓冲区有效长度
+		int* iptr = reinterpret_cast<int*>(this->convBuffer);  //转换缓冲区
+		rdLen = len;
+		for (start = 0; start < nsamples; start += len)
+		{
+			ptr = buffer + readSamples;
+			if (start + rdLen >= nsamples)
+			{
+				rdLen = nsamples - start;
+			}
+
+			auto result = this->_stream->read(this->convBuffer, rdLen * 4);   //指向调用，预防子类重写后循环调用
+			CHECK_RESULT(result);
+			nSample = result.value() / 4;
+			SampleConv::IntToDouble(iptr, nSample, ptr);
+
+			readSamples += nSample;
 		};
 		return readSamples;
 	}

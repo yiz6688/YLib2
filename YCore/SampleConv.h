@@ -3,6 +3,7 @@
 #include<limits>
 #include<random>
 
+#define COMPATIBILITY_MODE
 class SampleConv
 {
 
@@ -13,11 +14,38 @@ public:
 	template<typename T>
 	static void IntToFloat(T* src, int samplelen, float* dest, float scale = 1.0f)
 	{
-		constexpr int q_min = (std::numeric_limits<T>::min)();   //量化为最小值上下对称
-		//constexpr int q_max = (std::numeric_limits<T>::max)();	
-		const float coeff = -1.0f * scale / q_min ;  //用最小值也就是大的值进行转浮点数
+		#ifndef COMPATIBILITY_MODE
+			constexpr int q_min = (std::numeric_limits<T>::min)();   //量化为最小值上下对称
+			const float coeff = -1.0f * scale / q_min ;  //用最小值也就是大的值进行转浮点数
+		#else
+			constexpr int q_max = (std::numeric_limits<T>::max)();
+			const float coeff = 1.0f * scale / q_max ;  //用最大值也就是大的值进行转浮点数
+		#endif
+			
 		T* ptr1 = src + samplelen - 1;
 		float* ptr2 = dest + samplelen - 1;
+
+		for (int i = 0; i < samplelen; i++)
+		{
+			*ptr2 = (*ptr1) * coeff * scale;
+			ptr1--;
+			ptr2--;
+		}
+	}
+
+	template<typename T>
+	static void IntToDouble(T* src, int samplelen, double* dest, double scale = 1.0)
+	{
+		#ifndef COMPATIBILITY_MODE
+			constexpr int q_min = (std::numeric_limits<T>::min)();   //量化为最小值上下对称
+			const double coeff = -1.0 * scale / q_min ;  //用最小值也就是大的值进行转浮点数
+		#else
+			constexpr int q_max = (std::numeric_limits<T>::max)();
+			const double coeff = 1.0 * scale / q_max ;  //用最大值也就是大的值进行转浮点数
+		#endif
+
+		T* ptr1 = src + samplelen - 1;
+		double* ptr2 = dest + samplelen - 1;
 
 		for (int i = 0; i < samplelen; i++)
 		{
@@ -28,6 +56,7 @@ public:
 
 
 	}
+
 
 	//3字节整数保存在4字节整数中，保存逻辑是空出最低位的1个字节，这样保持符号一致性
 	static void Int24ToFloat(int* src, int samplelen, float* dest, float scale = 1.0f)
@@ -53,19 +82,10 @@ public:
 		constexpr int q_min = (std::numeric_limits<T>::min)();
 		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数
 
-
-		//static std::random_device rd;
-		//static std::mt19937 gen(rd());
-		// 生成 -1.0 到 1.0 之间的均匀分布随机数
-		//static std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
-
 		float* ptr1 = src + samplelen - 1;
 		T* ptr2 = dest + samplelen - 1;
 		for (int i = 0; i < samplelen; i++)
 		{
-			//float noise1 = dis(gen);
-			//float noise2 = dis(gen);
-			//auto value = static_cast<int>(std::round((*src) * coeff * scale + noise1 + noise2));
 			auto value = static_cast<int>(std::round((*ptr1) * coeff * scale));
 			if (value < q_min)
 			{
@@ -81,6 +101,35 @@ public:
 			ptr2--;
 		}
 	}
+
+	template<typename T>
+	static void DoubleToInt(double* src, int samplelen, T* dest, double scale = 1.0)
+	{
+		constexpr int q_max = (std::numeric_limits<T>::max)();   //量化为最大值上下对称
+		constexpr int q_min = (std::numeric_limits<T>::min)();
+		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数
+
+		double* ptr1 = src + samplelen - 1;
+		T* ptr2 = dest + samplelen - 1;
+		for (int i = 0; i < samplelen; i++)
+		{
+			auto value = static_cast<int>(std::round((*ptr1) * coeff * scale));
+			if (value < q_min)
+			{
+				value = q_min;
+			}
+			else if(value > q_max)
+			{
+				value = q_max;
+			}
+
+			*ptr2 = value;
+			ptr1--;
+			ptr2--;
+		}
+	}
+
+
 
 	static void FloatToInt24(float* src, int samplelen, int* dest, float scale = 1.0f)
 	{
@@ -107,7 +156,30 @@ public:
 		}
 	}
 
+	static void DoubleToInt24(double* src, int samplelen, int* dest, double scale = 1.0)
+	{
+		const int q_max = 8388607;   //量化为最大值上下对称
+		const int q_min = -8388608;
+		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数
+		double* ptr1 = src + samplelen - 1;
+		int* ptr2 = dest + samplelen - 1;
+		for (int i = 0; i < samplelen; i++)
+		{
+			auto value = static_cast<int>(std::round((*ptr1) * coeff * scale));
+			if (value < q_min)
+			{
+				value = q_min;
+			}
+			else if (value > q_max)
+			{
+				value = q_max;
+			}
 
+			*ptr2 = value;
+			ptr1--;
+			ptr2--;
+		}
+	}
 
 
 public:

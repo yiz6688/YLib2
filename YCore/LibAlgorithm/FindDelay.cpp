@@ -53,7 +53,7 @@ std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> 
     fftw_execute(pifft); //ifft 结果是互相关序列， 结果在 in里面
 
 
-    std::vector<double> corr(sampleNum); 
+    std::vector<double> corr(xLen + yLen -1); 
     int offset = 0;
     for(int i = fftSize - yLen + 1; i < fftSize; i++)
     {
@@ -101,7 +101,7 @@ std::vector<double> FindDelay::correlate2(std::span<double> x, std::span<double>
 
     fft.ifft(FD);
 
-    std::vector<double> corr(sampleNum); 
+    std::vector<double> corr(xLen + yLen -1); 
     int offset = 0;
     for(int i = fftSize - yLen + 1; i < fftSize; i++)
     {
@@ -124,7 +124,7 @@ int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y)
     auto sampleNum = 2*M - 1;
     int fftSize =  std::bit_ceil(static_cast<unsigned>(sampleNum));  //等价于nextpow2
 
-    FFT fft(fftSize);
+    FFT2 fft(fftSize);
 
     auto TD = fft.getTD(); //指向时域
     auto FD = fft.getFD(); //指向频域
@@ -144,23 +144,29 @@ int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y)
 
     fft.ifft(FD);
 
-    for(int i=0; i< fftSize; i++)
-    {
-        std::println("{:.12f}", TD[i]);
-    }
+    // for(int i=0; i< fftSize; i++)
+    // {
+    //     std::println("{:.12f},{:.12f}", TD[i].real(), TD[i].imag());
+    // }
 
-    std::vector<double> corr(sampleNum); 
+    std::vector<double> corr(xLen + yLen - 1); 
     int offset = 0;
     for(int i = fftSize - yLen + 1; i < fftSize; i++)
     {
-        corr[offset++] = TD[i] / fftSize;
+        corr[offset++] = abs(TD[i]);
     }
 
     for(int i = 0; i< xLen; i++)
     {
-        corr[offset++] = TD[i] / fftSize;
+        corr[offset++] = abs(TD[i]);
     }
 
-	return 0;
+    auto iter = std::max_element(corr.begin(), corr.end());
+    auto pos = std::distance(corr.begin(), iter);
+
+    auto delay = pos - yLen + 1;
+
+
+	return delay;
 }
 
