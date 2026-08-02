@@ -28,10 +28,10 @@ public:
 	{
 		//ofstream ofs("D:\\123.txt");
 		std::vector<double> win(N);
-		double fact = 1.0 * 2 * M_PI / (N - 1);
+		double fact = 1.0 * 2 * M_PI / N;
 		for (int i = 0; i < N; i++)
 		{
-			win[i] = coef[0] - coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i)
+			win[i] = coef[0] + coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i)
 				- coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
 			//ofs << win[i] << endl;
 		}

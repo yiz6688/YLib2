@@ -211,7 +211,7 @@ AudioSource StepSweep::GenerateSweepWave(double startHz, double stopHz, int minC
 {
 	//最小持续时间单位是毫秒
 	int SampleRate = 48000;
-	vector<double> freqlst = GenerateSweepFreq(startHz, stopHz, oct);
+	vector<double> freqlst = GenerateSweepFreq2(startHz, stopHz, oct);
 	vector<SweepInfo> infos;
 
 
@@ -292,7 +292,8 @@ AudioSource StepSweep::GenerateSweepWave(double startHz, double stopHz, int minC
 	double Q = 0;
 	for (auto& info : infos)
 	{
-		info.Q = Q * 360;
+		info.Q = Q;
+		//info.Q = Q * 360;
 		if(type == 0)
 		{
 			double realCycle = 1.0 * info.sampleNum * info.freq / SampleRate + Q;
@@ -357,7 +358,7 @@ std::vector<double> StepSweep::createWave(AudioSource *src, int type)
 		for(int i=0; i<postLen; i++)
 		{
 			double t = (i + offset) * last.freq / src->sampleRate   + last.Q;
-			double value = sin(2*M_PI *t) * win[i];
+			double value = sin(2*M_PI *t) * win[postLen + i];
 			samples.push_back(value);
 		}
 
@@ -377,7 +378,7 @@ std::vector<double> StepSweep::tukeyWin(int n, double ratio)
 {
 	std::vector<double> data(n);
 	auto per = ratio / 2;
-	auto low = per*(n-1) + 1;
+	auto low = static_cast<int>(floor(per*(n-1))) + 1;
 	auto hig = n - low + 1;
 
 	for(int i=0; i<n;i++)
@@ -394,14 +395,20 @@ std::vector<double> StepSweep::tukeyWin(int n, double ratio)
 			data[i] = 1;
 		}
 	}
-
-
-
-    return std::vector<double>();
+	return data;
 }
 
 void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
+	CosineWindow window1;
+	auto win1 = window1.getWindiow(475, CosineWindow::Blackman_Harris); //使用黑人哈里斯窗
+	auto rbww = Harmonic::enbw(win1, 48000);
+
+	std::println("{}",rbww);
+
+
+
+	return ;
 	int sampleRate = 48000;
 	//这里是不是要核对一下 假如录音文件长度不够，只有半截，或者其他场景的相关问题。
 	FindDelay fd;
@@ -434,6 +441,8 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 
 	
 	std::vector<double> vec(maxLen); //计算FFT的输入空间。
+	std::vector<double> pxx(maxLen);
+	std::vector<double> freqs(maxLen);
 	int offset = findDelay;
 
 	for(int i= 0;i<src.totalFrq; i++)
@@ -448,16 +457,26 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 		for(int i=0; i< fftLen; i++)
 		{
 			vec[i] = wav[findDelay + info.sampleStart] * win[i];  //加窗
+			freqs[i] = i * 1.0 * sampleRate / fftLen; //频率
 		}
 
 		FFT fft(fftLen);
+		auto td = fft.getTD();
 		fft.fft(vec); //进行fft;
+		for(int i=0; i< fftLen/2 + 1; i++)
+		{
+			auto& c = td[i];
+			vec[i] = std::norm(c);  //power
+		}
+
+		Harmonic::periodogram(vec, fftLen, sampleRate, pxx);  //计算psd
 
 		auto powerWin = std::accumulate(win.begin(), win.end(), 0.0, [](auto a, auto b){
-			return a*a + b*b;
+			return a + b*b;
 		});  //窗的能量。
 
 
+		Harmonic::computeHarm(pxx, freqs, fftLen / 2, powerWin, info.freq, 1);  //计算谐波
 
 	}
 

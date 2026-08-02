@@ -2,6 +2,8 @@
 #include"../../YCore/LibAlgorithm/findDelay.h"
 #include"../../YCore/LibAlgorithm/SweepTest.h"
 #include"../../YCore/WaveReader.h"
+#include"../../YCore/WinUtils.h"
+#include"../../YCore/FIleUtils.h"
 using namespace std;
 
 
@@ -74,6 +76,8 @@ int main()
     //println("algTest");
 
     //sweepTest();
-    corrTest2();
-
+    //corrTest2();
+    StepSweep step;
+    std::vector<double> vec;
+    step.sweepTest(vec, 10000, 20, 10, 10, Octave::OCT12, 0);
 }

@@ -1,12 +1,15 @@
 #pragma once
 #include<numbers>
 #include<cmath>
+#include<print>
+#include<complex>
 
 #ifndef M_PI
 	constexpr auto M_PI = std::numbers::pi;
 	//#define M_PI 3.14159265358979323846
 #endif
 
+using cpx = std::complex<double>;
 struct ccc
 {
 	double a0;
@@ -176,6 +179,25 @@ class Biquad {
 		coeffs.a1 /= coeffs.a0;
 		coeffs.a2 /= coeffs.a0;
 		return coeffs;
+	}
+
+
+	void getValue(double freq, ccc c, double sampleRate)
+	{
+		
+		double omega = 2 * M_PI * freq / sampleRate;
+		double cosw = cos(omega);
+		double sinw = sin(omega);
+
+		cpx numerator = c.b0 + c.b1 * cpx(sinw, cosw) + c.b2 * cpx(sin(2 * omega), cos(2 * omega));
+		cpx denominator = c.a0 + c.a1 * cpx(sinw, cosw) + c.a2 * cpx(sin(2 * omega), cos(2 * omega));
+
+		double magnitude = std::abs(numerator / denominator);
+
+		double phase = atan2(std::imag(numerator / denominator), std::real(numerator / denominator));
+
+		//std::cout << "Magnitude: " << magnitude << std::endl;
+		//std::cout << "Phase: " << phase << std::endl;
 	}
 
 

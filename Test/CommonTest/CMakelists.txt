@@ -1,0 +1,2 @@
+add_executable(ComTest ComTest.cpp)
+target_link_libraries(ComTest PRIVATE ${LIBNAME})

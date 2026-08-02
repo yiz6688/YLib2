@@ -2,8 +2,10 @@
 #include<Windows.h>
 #include<format>
 #include<string>
+#include<string_view>
 #include"Encoding.h"
-
+#include<print>
+#include"TResult.h"
 
 
 class WinUtils
@@ -12,7 +14,7 @@ public:
 	static std::string getError(const std::string& func)
 	{
 		auto code = GetLastError();
-		return std::format("{} fail，code：{}", func, code);
+		return std::format("{} fail,code:{}", func, code);
 	}
 
 
@@ -49,7 +51,60 @@ public:
 	}
 
 	
+	static TResult<void> makeDirs(std::wstring_view wpath)
+	{
 
+		auto size = GetFullPathNameW(wpath.data(), 0, nullptr, nullptr);
+		if(size == 0)
+		{
+			auto error = getError("GetFullPathNameW");
+			return std::unexpected(error);
+		}
+		std::wstring fullPath(size, L'\0');
+		size = GetFullPathNameW(wpath.data(), size, fullPath.data(), nullptr);
+		if(size == 0)
+		{
+			auto error = getError("GetFullPathNameW");
+			return std::unexpected(error);
+		}
+
+		
+		std::wstring path;
+		WINBOOL ret = FALSE;
+		auto pos = fullPath.find_first_of(L"\\/");
+		if(pos == std::wstring_view::npos)
+		{
+			return std::unexpected("Invalid path");
+		}else if(pos !=0)
+		{
+			if(fullPath[pos -1] == L':')  //驱动器目录
+			{
+				pos++;
+			}
+		}
+
+		while(true)
+		{
+			pos = fullPath.find_first_of(L"\\/", pos);
+			if (pos == std::wstring_view::npos)
+			{
+				break;
+			}
+			path = fullPath.substr(0, pos);
+			ret = CreateDirectoryW(path.data(), NULL);
+			if(ret == FALSE)
+			{
+				int code = GetLastError();
+				if(code != ERROR_ALREADY_EXISTS)
+				{
+					std::string error = std::format("CreateDirectoryW fail,code:{}", code);
+					return std::unexpected(error);
+				}
+			}
+			pos++;
+		}
+		return {};
+	}
 
 };
 

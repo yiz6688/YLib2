@@ -4,6 +4,7 @@
 #include<numeric>
 #include<vector>
 #include<cmath>
+#include<map>
 //#pragma comment(lib, "fftw3.lib")
 
 using std::vector;
@@ -126,6 +127,18 @@ public:
 
 	//periodogram周期图
 
+	static void periodogram(std::vector<double>& fftValue, int size, int sampleRate, std::vector<double>& pxx)
+	{
+		auto len = size / 2;
+		pxx[0] = fftValue[0] / size / sampleRate;
+		pxx[len] = fftValue[len] / size / sampleRate;
+		for(int i=1; i<len; i++)
+		{
+			pxx[i] = 2 * fftValue[i] / size / sampleRate;
+		}
+	}
+
+
 	//获取PSD
 	static vector<double> getPSD(std::vector<double> data, int sampleRate)
 	{
@@ -185,20 +198,26 @@ public:
 	static double enbw(vector<double> win, int sampleRate)
 	{
 
-		auto v1 = std::accumulate(win.begin(), win.end(), 0.0, [](double a, double b) {
-			return a * a + b * b;
+		auto power = std::accumulate(win.begin(), win.end(), 0.0, [](double a, double b) {
+			return a + b * b;
 			}); //窗的平方和
 
-		auto v2 = std::accumulate(win.begin(), win.end(), 0.0);//窗的和
-		//bw = (rms/mean) ^ 2;
-		auto enbw = v1 * win.size() / (v2 * v2);
+		auto sum = std::accumulate(win.begin(), win.end(), 0.0);//窗的和
 
-		auto v3 = enbw * (sampleRate / win.size());
+		auto size = win.size();
 
+		auto rms = sqrt(power / size);
+		auto mean = sum / size;
+		auto bw = pow(rms / mean, 2);	//bw = (rms/mean) ^ 2;
+		
+		auto bw2 = power * size / (sum * sum);
+
+
+		auto rbw = bw * sampleRate / size;
+		auto rbw2 = bw2 * sampleRate / size;
 		//这里的公式可以简化 相约
 
-		return v3;  
-
+		return rbw;  
 	}
 
 
@@ -213,8 +232,7 @@ public:
 
 		if (order == 1)
 		{
-
-			auto iter = std::max(pxx.begin(), pxx.end());
+			auto iter = std::max_element(pxx.begin(), pxx.end());
 			maxToneIndex = std::distance(pxx.begin(), iter);
 			maxTone = *iter;
 		}
@@ -233,7 +251,7 @@ public:
 			int left = std::max(0, index - 1);
 			int right = std::min(index + 1, int(freqs.size() - 1));
 
-			iter = std::max(freqs.begin() + left, freqs.begin() + right);
+			iter = std::max_element(freqs.begin() + left, freqs.begin() + right + 1);
 			//在分离的范围内获取最大值，刷新标志位
 			maxToneIndex = std::distance(freqs.begin(), iter);
 			maxTone = *iter;
@@ -243,12 +261,12 @@ public:
 		int right = maxToneIndex + 1;
 
 		//left 计算左侧第一个开始变大的点，  right计算右侧第一个开始变大的点
-		while (left >= 0 && pxx[left - 1] < pxx[left])
+		while (left >= 0 && pxx[left] <= pxx[left+1])
 		{
 			left -= 1;
 		}
 
-		while (right < pxx.size() && pxx[right + 1] < pxx[right])
+		while (right <= pxx.size() && pxx[right - 1] >= pxx[right])
 		{
 			right += 1;
 		}
@@ -258,35 +276,55 @@ public:
 
 	}
 
-	static double getPowerFreq(vector<double> pxx, vector<double> freqs, std::array<int, 3>indexs)
+	static std::pair<double, double> getPowerFreq(vector<double> pxx, vector<double> freqs, int size, double rbw, std::array<int, 3>indexs)
 	{
-		int left = indexs[0];
-		int tonInex = indexs[1];
-		int right = indexs[2];
+		auto[left, toneIndex, right] = indexs;
+		left += 1;
+		right -= 1;
 
-		double v1 = 0;
-		double v2 = 0;
+		auto width = freqs[1] - freqs[0];
+
+		double power = 0;
+		double sum = 0;
 
 		double calcFreq = 0.0; //计算出来的频率
 
+		for (int i = left; i <= right; i++)
+		{
+			power += pxx[i] * freqs[i];
+			sum += pxx[i];
+		}
+
+		calcFreq = power / sum;  //计算出来的基准频率  
+
+		power = 0;
 		if (left < right)
 		{
-			for (int i = left; i < right; i++)
+			for(int i= left; i<= right; i++)
 			{
-				v1 += pxx[i] * freqs[i];
-				v2 += pxx[i];
+				power += pxx[i] * width;
 			}
+		}else if(right > 0 && right < size)
+		{
+			power = pxx[right] *(freqs[right + 1] - freqs[right - 1]) / 2;
+		}else
+		{
+			power = pxx[right] * width;
+		}
 
-			calcFreq = v1 / v2;  //计算出来的基准频率  
+		if(power < rbw * pxx[toneIndex])
+		{
+			power = rbw *pxx[toneIndex];
+			calcFreq = freqs[toneIndex];
 		}
 
 
-		return calcFreq;
+		return {calcFreq, power};
 	}
 
 
 	//计算谐波
-	static void computeHarm(vector<double>pxx, vector<double> freqs, float rsolu, float baseFreq,  int order )
+	static void computeHarm(vector<double>pxx, vector<double> freqs, int size, double rbw,  double baseFreq,  int order )
 	{
 
 		double targetFreq = baseFreq * order; //目标频率
@@ -295,25 +333,23 @@ public:
 		{
 			pxx[0] *= 2;
 
-			std::array<int, 3> res = getToneFromPSD(pxx, freqs, baseFreq, 0);
-			int left = res[0] + 1;
-			int toneIndex = res[1];
-			int right = res[2] - 1;
+			auto[left, toneIndex, right] = getToneFromPSD(pxx, freqs, baseFreq, 0);
+			left +=1;
+			right -=1;
 
-			for (int i = left; i < right; i++)
+			for (int i = left; i <= right; i++)
 			{
 				pxx[i] = 0;  //对基频清0
 			}
 
 
-			res = getToneFromPSD(pxx, freqs, baseFreq, 1);
-			left = res[0] + 1;
-			toneIndex = res[1];
-			right = res[2] - 1;
+			auto[left2, toneIndex2, right2] = getToneFromPSD(pxx, freqs, baseFreq, 1);
+			left2 +=1;
+			right2 -=1;
 
-			double freq = getPowerFreq(pxx, freqs, res);  //获取频率
+			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2});  //获取频率
 
-			for (int i = left; i < right; i++)
+			for (int i = left2; i <= right2; i++)
 			{
 				pxx[i] = 0;
 			}
@@ -321,11 +357,11 @@ public:
 		else
 		{
 			auto res = getToneFromPSD(pxx, freqs, baseFreq, 1);
-			int left = res[0] + 1;
-			int toneIndex = res[1];
-			int right = res[2] - 1;
+			int left2 = res[0] + 1;
+			int toneIndex2 = res[1];
+			int right2 = res[2] - 1;
 
-			double freq = getPowerFreq(pxx, freqs, res);  //获取频率
+			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2});  //获取频率
 
 		}
 
