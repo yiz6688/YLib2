@@ -613,7 +613,8 @@ std::expected<long, std::string> FileStream::seekCore(long offset, SeekOrigin or
 
 
 
-std::expected<void, std::string> FileStream::init(std::string_view filepath, FileAccess fileAccess, FileShare fileShare, FileMode fileMode)
+std::expected<void, std::string> FileStream::init(std::string_view filepath, FileAccess fileAccess, 
+	FileShare fileShare, FileMode fileMode)
 {
 	if (filepath.empty())
 	{

@@ -56,7 +56,7 @@ void sweepTest2()
 {
     StepSweep step;
 
-    WaveReader reader(R"(D:\wave\8.wav)");
+    WaveReader reader(R"(D:\wave\testWave\\SPK\\8.wav)");
     int num = reader.getFrameCount();
     std::vector<double> data(num);
     auto res = reader.readSamples64(data.data(), num);
@@ -80,4 +80,5 @@ int main()
 
     //sweepTest();
     //corrTest2();
+    sweepTest2();
 }

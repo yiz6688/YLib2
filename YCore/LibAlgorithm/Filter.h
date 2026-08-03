@@ -184,7 +184,8 @@ class Biquad {
 
 	void getValue(double freq, ccc c, double sampleRate)
 	{
-		
+		auto[a0, a1, a2, b0, b1, b2] = c;
+
 		double omega = 2 * M_PI * freq / sampleRate;
 		double cosw = cos(omega);
 		double sinw = sin(omega);
@@ -200,5 +201,22 @@ class Biquad {
 		//std::cout << "Phase: " << phase << std::endl;
 	}
 
+
+	//获取db值
+	double getValue2(double freq, ccc c, double fs)
+	{
+		auto w = 2 * M_PI * freq / fs;
+		auto sinw2 = sin(w / 2) * sin(w / 2);
+		auto[a0, a1, a2, b0, b1, b2] = c;
+
+		auto num2 =(b0 + b1 + b2) * (b0 + b1 + b2) - 4 * (b0 * b1 + 4 * b0 * b2 + b1 * b2) * sinw2 
+			+ 16 * b0 * b2 * sinw2 * sinw2;	
+		
+		auto den2 = (a0 + a1 + a2) * (a0 + a1 + a2) - 4 * (a0 * a1 + 4 * a0 * a2 + a1 * a2) * sinw2
+			+ 16 * a0 * a2 * sinw2 * sinw2;
+
+		
+		return 10 * log10(num2 / den2); //音频是20log(v), 这里是平方，就不用20了。
+	}
 
 };

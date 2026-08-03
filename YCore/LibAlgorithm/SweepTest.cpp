@@ -469,7 +469,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 			vec[i] = std::norm(c);  //power
 		}
 
-		auto pathx = FileUtils::createPath("D:\\1234",ii);
+		auto pathx = FileUtils::createPath("D:\\wave\\benchMark\\SweepData\\sc",ii, "_");
 
 		auto powerWin = std::accumulate(win.begin(), win.end(), 0.0, [](auto a, auto b){
 			return a + b*b;
@@ -491,6 +491,10 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 			}
 
 			FileUtils::writeNumbers(results.data(), index, pathx);
+			if( ii == 0 )
+			{
+				std::println("{}", results[1]);
+			}
 		}
 
 	}

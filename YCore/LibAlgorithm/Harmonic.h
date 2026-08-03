@@ -227,7 +227,7 @@ public:
 		//这里计算出来的是目标频率，基频乘以谐波阶数
 		double freq = baseFreq * order;
 
-		int maxToneIndex;  //最大值所在的位置
+		int maxToneIndex = 0;  //最大值所在的位置
 		double maxTone;   //最大的谐波
 
 		if (order == 1)
@@ -236,7 +236,7 @@ public:
 			maxToneIndex = std::distance(pxx.begin(), iter);
 			maxTone = *iter;
 		}
-		else if (freq >= freqs.front() && freq <= freqs.back())
+		else if (freq >= freqs[0] && freq <= freqs[size])
 		{
 			//查找最近的频点
 			auto iter = std::lower_bound(freqs.begin(), freqs.begin() + size, freq);
@@ -266,7 +266,7 @@ public:
 			left -= 1;
 		}
 
-		while (right <= pxx.size() && pxx[right - 1] >= pxx[right])
+		while (right <= size && pxx[right - 1] >= pxx[right])
 		{
 			right += 1;
 		}
@@ -276,7 +276,7 @@ public:
 
 	}
 
-	static std::pair<double, double> getPowerFreq(vector<double> pxx, vector<double> freqs, int size, double rbw, std::array<int, 3>indexs)
+	static std::pair<double, double> getPowerFreq(vector<double> pxx, vector<double> freqs, int size, double rbw, std::array<int, 3>indexs, bool flag)
 	{
 		auto[left, toneIndex, right] = indexs;
 
@@ -294,6 +294,11 @@ public:
 		}
 
 		calcFreq = power / sum;  //计算出来的基准频率  
+
+		if(flag && sum !=0)
+		{
+			int km = 1;
+		}
 
 		power = 0;
 		if (left < right)
@@ -322,7 +327,7 @@ public:
 
 
 	//计算谐波
-	static std::pair<double,double> computeHarm(vector<double>pxx, vector<double> freqs, int size, double rbw,  double baseFreq,  int order )
+	static std::pair<double,double> computeHarm(vector<double>& pxx, vector<double> freqs, int size, double rbw,  double baseFreq,  int order )
 	{
 
 		double targetFreq = baseFreq * order; //目标频率
@@ -345,7 +350,12 @@ public:
 			left2 +=1;
 			right2 -=1;
 
-			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2});  //获取频率
+			if(baseFreq >= 20000)
+			{
+				std::println("1.{},{},{}",left2, toneIndex2, right2);
+			}
+
+			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2}, false);  //获取频率
 
 			for (int i = left2; i <= right2; i++)
 			{
@@ -355,12 +365,19 @@ public:
 		}
 		else
 		{
-			auto res = getToneFromPSD(pxx, freqs, size, baseFreq, 1);
+			auto res = getToneFromPSD(pxx, freqs, size, baseFreq, order);
 			int left2 = res[0] + 1;
 			int toneIndex2 = res[1];
 			int right2 = res[2] - 1;
 
-			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2});  //获取频率
+			bool flag = false;
+			if(baseFreq >= 20000 && order==2)
+			{
+				std::println("2.{},{},{}",left2, toneIndex2, right2);
+				flag = true;
+			}
+
+			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2}, flag);  //获取频率
 			return ress;
 		}
 
