@@ -127,14 +127,14 @@ public:
 
 	//periodogram周期图
 
-	static void periodogram(std::vector<double>& fftValue, int size, int sampleRate, std::vector<double>& pxx)
+	static void periodogram(std::vector<double>& fftValue, int size, double powerWin, int sampleRate, std::vector<double>& pxx)
 	{
 		auto len = size / 2;
-		pxx[0] = fftValue[0] / size / sampleRate;
-		pxx[len] = fftValue[len] / size / sampleRate;
+		pxx[0] = fftValue[0] / powerWin / sampleRate;
+		pxx[len] = fftValue[len] / powerWin / sampleRate;
 		for(int i=1; i<len; i++)
 		{
-			pxx[i] = 2 * fftValue[i] / size / sampleRate;
+			pxx[i] = 2 * fftValue[i] / powerWin / sampleRate;
 		}
 	}
 
@@ -222,7 +222,7 @@ public:
 
 
 
-	static std::array<int,3> getToneFromPSD(vector<double> pxx, vector<double> freqs, double baseFreq, int order)
+	static std::array<int,3> getToneFromPSD(vector<double> pxx, vector<double> freqs, int size, double baseFreq, int order)
 	{
 		//这里计算出来的是目标频率，基频乘以谐波阶数
 		double freq = baseFreq * order;
@@ -232,16 +232,16 @@ public:
 
 		if (order == 1)
 		{
-			auto iter = std::max_element(pxx.begin(), pxx.end());
+			auto iter = std::max_element(pxx.begin(), pxx.begin() + size);
 			maxToneIndex = std::distance(pxx.begin(), iter);
 			maxTone = *iter;
 		}
 		else if (freq >= freqs.front() && freq <= freqs.back())
 		{
 			//查找最近的频点
-			auto iter = std::lower_bound(freqs.begin(), freqs.end(), freq);
+			auto iter = std::lower_bound(freqs.begin(), freqs.begin() + size, freq);
 			auto iter2 = iter - 1;
-			if (*iter - freq > freq - *iter)
+			if (*iter - freq > freq - *iter2)
 			{
 				iter = iter2;  //说明前一个点更接近freq
 			}
@@ -251,9 +251,9 @@ public:
 			int left = std::max(0, index - 1);
 			int right = std::min(index + 1, int(freqs.size() - 1));
 
-			iter = std::max_element(freqs.begin() + left, freqs.begin() + right + 1);
+			iter = std::max_element(pxx.begin() + left, pxx.begin() + right + 1);
 			//在分离的范围内获取最大值，刷新标志位
-			maxToneIndex = std::distance(freqs.begin(), iter);
+			maxToneIndex = std::distance(pxx.begin(), iter);
 			maxTone = *iter;
 		}
 
@@ -279,8 +279,6 @@ public:
 	static std::pair<double, double> getPowerFreq(vector<double> pxx, vector<double> freqs, int size, double rbw, std::array<int, 3>indexs)
 	{
 		auto[left, toneIndex, right] = indexs;
-		left += 1;
-		right -= 1;
 
 		auto width = freqs[1] - freqs[0];
 
@@ -324,7 +322,7 @@ public:
 
 
 	//计算谐波
-	static void computeHarm(vector<double>pxx, vector<double> freqs, int size, double rbw,  double baseFreq,  int order )
+	static std::pair<double,double> computeHarm(vector<double>pxx, vector<double> freqs, int size, double rbw,  double baseFreq,  int order )
 	{
 
 		double targetFreq = baseFreq * order; //目标频率
@@ -333,7 +331,7 @@ public:
 		{
 			pxx[0] *= 2;
 
-			auto[left, toneIndex, right] = getToneFromPSD(pxx, freqs, baseFreq, 0);
+			auto[left, toneIndex, right] = getToneFromPSD(pxx, freqs, size, baseFreq, 0);
 			left +=1;
 			right -=1;
 
@@ -343,7 +341,7 @@ public:
 			}
 
 
-			auto[left2, toneIndex2, right2] = getToneFromPSD(pxx, freqs, baseFreq, 1);
+			auto[left2, toneIndex2, right2] = getToneFromPSD(pxx, freqs, size, baseFreq, 1);
 			left2 +=1;
 			right2 -=1;
 
@@ -353,16 +351,17 @@ public:
 			{
 				pxx[i] = 0;
 			}
+			return ress;
 		}
 		else
 		{
-			auto res = getToneFromPSD(pxx, freqs, baseFreq, 1);
+			auto res = getToneFromPSD(pxx, freqs, size, baseFreq, 1);
 			int left2 = res[0] + 1;
 			int toneIndex2 = res[1];
 			int right2 = res[2] - 1;
 
 			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2});  //获取频率
-
+			return ress;
 		}
 
 

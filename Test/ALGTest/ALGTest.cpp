@@ -44,16 +44,19 @@ void corrTest2()
 
 void sweepTest()
 {
+    int type = 0;
     StepSweep step;
 
-    step.GenerateSweepWave(10000, 20, 10, 10, Octave::OCT12, 1);
+    auto src = step.GenerateSweepWave(20000, 20, 10, 10, Octave::OCT12, type);
+    auto data = step.createWave(&src, type);
+    
 }
 
 void sweepTest2()
 {
     StepSweep step;
 
-    WaveReader reader("");
+    WaveReader reader(R"(D:\wave\8.wav)");
     int num = reader.getFrameCount();
     std::vector<double> data(num);
     auto res = reader.readSamples64(data.data(), num);
@@ -63,7 +66,7 @@ void sweepTest2()
         return;
     }
 
-    step.sweepTest(data, 10000, 20, 10, 10, Octave::OCT12, 0);
+    step.sweepTest(data, 20000, 20, 10, 10, Octave::OCT12, 0);
 
 }
 
@@ -77,7 +80,4 @@ int main()
 
     //sweepTest();
     //corrTest2();
-    StepSweep step;
-    std::vector<double> vec;
-    step.sweepTest(vec, 10000, 20, 10, 10, Octave::OCT12, 0);
 }

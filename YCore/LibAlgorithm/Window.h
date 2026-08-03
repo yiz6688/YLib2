@@ -32,7 +32,7 @@ public:
 		for (int i = 0; i < N; i++)
 		{
 			win[i] = coef[0] + coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i)
-				- coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
+				+ coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
 			//ofs << win[i] << endl;
 		}
 

@@ -12,6 +12,7 @@
 #include"Harmonic.h"
 #include"Window.h"
 #include"FFT.h"
+#include"Fileutils.h"
 
 using namespace std;
 
@@ -401,14 +402,6 @@ std::vector<double> StepSweep::tukeyWin(int n, double ratio)
 void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, int minCycle, int minDuration, Octave oct, int type)
 {
 	CosineWindow window1;
-	auto win1 = window1.getWindiow(475, CosineWindow::Blackman_Harris); //使用黑人哈里斯窗
-	auto rbww = Harmonic::enbw(win1, 48000);
-
-	std::println("{}",rbww);
-
-
-
-	return ;
 	int sampleRate = 48000;
 	//这里是不是要核对一下 假如录音文件长度不够，只有半截，或者其他场景的相关问题。
 	FindDelay fd;
@@ -443,40 +436,62 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 	std::vector<double> vec(maxLen); //计算FFT的输入空间。
 	std::vector<double> pxx(maxLen);
 	std::vector<double> freqs(maxLen);
+	std::vector<std::pair<double,double>> results(100);
+	int index = 0;
+
+	std::fill_n(pxx.begin(), maxLen, 0.0);
+	std::fill_n(results.begin(), 100, std::pair<double,double>{0.0,0.0});
+
 	int offset = findDelay;
 
-	for(int i= 0;i<src.totalFrq; i++)
+	for(int ii= 0;ii<src.totalFrq; ii++)
 	{
 		
-		int fftLen = sample2[i];
+		int fftLen = sample2[ii];
 		CosineWindow window;
 		auto win = window.getWindiow(fftLen, CosineWindow::Blackman_Harris); //使用黑人哈里斯窗
-		
-		auto& info = src.infos[i];
+		auto rbw = Harmonic::enbw(win, sampleRate);  //计算窗的能量
+		auto& info = src.infos[ii];
 
 		for(int i=0; i< fftLen; i++)
 		{
-			vec[i] = wav[findDelay + info.sampleStart] * win[i];  //加窗
+			vec[i] = wav[findDelay + info.sampleStart + i] * win[i];  //加窗
 			freqs[i] = i * 1.0 * sampleRate / fftLen; //频率
 		}
 
-		FFT fft(fftLen);
-		auto td = fft.getTD();
-		fft.fft(vec); //进行fft;
-		for(int i=0; i< fftLen/2 + 1; i++)
+		FFT2 fft(fftLen);
+		auto fd = fft.getFD();
+		auto temp = std::span<double>(vec.data(), fftLen);
+		fft.fft(temp); //进行fft;
+		for(int i=0; i<= fftLen/2 + 1; i++)
 		{
-			auto& c = td[i];
+			auto& c = fd[i];
 			vec[i] = std::norm(c);  //power
 		}
 
-		Harmonic::periodogram(vec, fftLen, sampleRate, pxx);  //计算psd
+		auto pathx = FileUtils::createPath("D:\\1234",ii);
 
 		auto powerWin = std::accumulate(win.begin(), win.end(), 0.0, [](auto a, auto b){
 			return a + b*b;
 		});  //窗的能量。
+		
+		Harmonic::periodogram(vec, fftLen, powerWin, sampleRate, pxx);  //计算psd
 
+		index = 0;
+		auto baseValue = Harmonic::computeHarm(pxx, freqs, fftLen / 2, rbw, info.freq, 1);  //计算谐波
+		results[index++] = baseValue;
+		auto freq = baseValue.first;
+		auto kk = freq / info.freq;
+		if(fabs(kk - 1) < 0.05)
+		{
+			for(int i=2; i<=40 ;i++)
+			{
+				auto harmValue = Harmonic::computeHarm(pxx, freqs, fftLen / 2, rbw, info.freq, i);
+				results[index++] = harmValue;
+			}
 
-		Harmonic::computeHarm(pxx, freqs, fftLen / 2, powerWin, info.freq, 1);  //计算谐波
+			FileUtils::writeNumbers(results.data(), index, pathx);
+		}
 
 	}
 
@@ -485,7 +500,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 
 
 
-
+	return;
 
 
 	int size = this->sweepInfos.size();

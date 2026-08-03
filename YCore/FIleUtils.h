@@ -1,6 +1,8 @@
 #include<fstream>
 #include<string>
 #include<iomanip>
+#include<map>
+#include<cmath>
 
 
 class FileUtils
@@ -9,12 +11,30 @@ class FileUtils
 
 public:
 
+
+    static void writeNumbers(std::pair<double, double>* data, int dataLen, const std::string& filePath)
+    {
+        std::ofstream ofs(filePath);
+        for(int i=0;i<dataLen; i++)
+        {
+            std::pair<double, double> p = data[i];
+            if(std::isnan(p.first))
+            {
+                ofs<< std::fixed<< std::setprecision(13)<<"nan"<< ", "<<p.second<< "\n";
+            }else
+            {
+                ofs<< std::fixed<< std::setprecision(13)<<p.first<< ", "<<p.second<< "\n";
+            }
+        }
+        ofs.close();
+    }
+
     static void writeNumbers(double* data, int dataLen, const std::string& filePath)
     {
         std::ofstream ofs(filePath);
         for(int i=0;i<dataLen; i++)
         {
-            ofs<< std::fixed<< std::setprecision(10)<< data[i]<< "\n";
+            ofs<< std::fixed<< std::setprecision(13)<< data[i]<< "\n";
         }
         ofs.close();
     }
@@ -49,9 +69,9 @@ public:
     }
 
 
-    static std::string createPath(const std::string& rootPath, int index)
+    static std::string createPath(const std::string& rootPath, int index, const std::string& suffix = "")
     {
-        std::string filePath = rootPath + "_"+std::to_string(index) + ".txt";
+        std::string filePath = rootPath + std::to_string(index) + suffix+ ".txt";
         return filePath;
     }
 
