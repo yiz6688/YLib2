@@ -5,6 +5,7 @@
 #include<vector>
 #include<cmath>
 #include<map>
+#include<array>
 //#pragma comment(lib, "fftw3.lib")
 
 using std::vector;
@@ -240,11 +241,15 @@ public:
 		{
 			//查找最近的频点
 			auto iter = std::lower_bound(freqs.begin(), freqs.begin() + size, freq);
-			auto iter2 = iter - 1;
-			if (*iter - freq > freq - *iter2)
+			if(iter != freqs.begin())
 			{
-				iter = iter2;  //说明前一个点更接近freq
+				auto iter2 = iter - 1;
+				if (*iter - freq > freq - *iter2)
+				{
+					iter = iter2;  //说明前一个点更接近freq
+				}
 			}
+
 			
 			int index = std::distance(freqs.begin(), iter);
 			//按照左右分离 计算边界

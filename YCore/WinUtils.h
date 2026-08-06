@@ -70,7 +70,7 @@ public:
 
 		
 		std::wstring path;
-		WINBOOL ret = FALSE;
+		auto ret = FALSE;
 		auto pos = fullPath.find_first_of(L"\\/");
 		if(pos == std::wstring_view::npos)
 		{

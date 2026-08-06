@@ -2,11 +2,32 @@
 #include<span>
 #include<numeric>
 #include<cmath>
+#include<vector>
 
 class SignalProc
 {
 
 
+
+public:
+	//卷积
+	static std::vector<double> conv2d(std::span<double> data, std::span<double> kernel)
+	{
+		int dataSize = data.size();
+		int kernelSize = kernel.size();
+		int outputSize = dataSize + kernelSize - 1;
+		std::vector<double> output(outputSize, 0.0);
+
+
+		for(int i=0; i<dataSize; ++i)
+		{
+			for(int j=0; j<kernelSize; ++j)
+			{
+				output[i + j] += data[i] * kernel[j];
+			}
+		}
+		return output;
+	}
 
 
 public:

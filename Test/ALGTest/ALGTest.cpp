@@ -80,5 +80,17 @@ int main()
 
     //sweepTest();
     //corrTest2();
-    sweepTest2();
+    //sweepTest2();
+
+    std::vector<char> vec;
+    vec.reserve(100);
+
+    int k = 0;
+    if(vec.data() == nullptr)
+    {
+        k++;
+    }
+
+    std::println("{}, {}, {}", vec.capacity(), vec.size(), k);
+    return 0;
 }

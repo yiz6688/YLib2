@@ -35,7 +35,11 @@ add_library(${LIBNAME} STATIC ${SRC_FILES})
 #GCC添加实验性质库支持
 target_link_libraries(${LIBNAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:stdc++exp>)   
 
-target_link_libraries(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib/libfftw3.a)
+target_link_directories(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib)
+
+#target_link_libraries(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib/libfftw3.a)
+
+target_link_libraries(${LIBNAME} PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,fftw3,libfftw3.a>)
 
 #设置包含目录
 target_include_directories(${LIBNAME} PUBLIC ./YCore)

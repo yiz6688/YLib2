@@ -358,7 +358,7 @@ std::vector<double> StepSweep::createWave(AudioSource *src, int type)
 		auto last = src->infos.back();
 		for(int i=0; i<postLen; i++)
 		{
-			double t = (i + offset) * last.freq / src->sampleRate   + last.Q;
+			double t = (i + offset + last.sampleNum) * last.freq / src->sampleRate   + last.Q;
 			double value = sin(2*M_PI *t) * win[postLen + i];
 			samples.push_back(value);
 		}
@@ -463,7 +463,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 		auto fd = fft.getFD();
 		auto temp = std::span<double>(vec.data(), fftLen);
 		fft.fft(temp); //进行fft;
-		for(int i=0; i<= fftLen/2 + 1; i++)
+		for(int i=0; i<= fftLen/2; i++)
 		{
 			auto& c = fd[i];
 			vec[i] = std::norm(c);  //power

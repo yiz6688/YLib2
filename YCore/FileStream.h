@@ -56,7 +56,7 @@ enum class FileShare
 };
 
 
-class FileStream : public Stream
+class FileStream final: public Stream
 {
 public:
 
@@ -66,10 +66,10 @@ public:
 
 	FileStream(const std::string_view filepath, FileMode fileMode);
 
+public:
 	FileStream(FileStream&& other) noexcept;
 
 	FileStream& operator=(FileStream&& other) noexcept;
-
 
 	~FileStream();
 
@@ -109,8 +109,7 @@ private:
 	std::expected<long, std::string> seekCore(long offset, SeekOrigin origin);
 
 public:
-	std::expected<void, std::string> init(std::string_view filepath, FileAccess fileAccess, 
-		FileShare fileShare, FileMode fileMode);
+	std::expected<void, std::string> init();
 
 public:
 	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
@@ -125,12 +124,12 @@ public:
 
 private:
 
-	std::string filepath;
-	FileMode fileMode;
-	FileAccess fileAccess;
-	FileShare fileShare;
+	std::string _filepath;
+	FileMode _fileMode;
+	FileAccess _fileAccess;
+	FileShare _fileShare;
 	
-	void* hFile;
+	void* _hFile;
 	std::unique_ptr<char[]> _buffer;
 	int _capacity;
 	long _appendStart;  //追加模式下，不允许修改已经存在的内容，这里记录的是原始位置。

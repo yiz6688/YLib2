@@ -13,7 +13,8 @@ constexpr int defaultBufferSize = 4096;  //默认设置为4k
 #define CHECK_RESULT(result) if (!result) { return std::unexpected{ result.error() }; }
 
 FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize)
-	: hFile(INVALID_HANDLE_VALUE), _capacity(bufferSize < 0 ? defaultBufferSize : bufferSize)
+	: _filepath{filepath}, _fileMode{fileMode}, _fileAccess{fileAccess}, _fileShare{fileShare},
+	 _hFile(INVALID_HANDLE_VALUE), _capacity(bufferSize < 0 ? defaultBufferSize : bufferSize)
 {
 	this->_readable = true;
 	this->_writeable = true;
@@ -31,7 +32,7 @@ FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileA
 	SetErrorMode(1); //系统不弹窗，将错误发送给调用进程
 
 
-	auto result = this->init(filepath, fileAccess, fileShare, fileMode);
+	auto result = this->init();
 	if (!result)
 	{
 		println("{}", result.error());
@@ -51,10 +52,11 @@ FileStream::FileStream(const string_view filepath, FileMode fileMode)
 {}
 
 FileStream::FileStream(FileStream&& other) noexcept
-	: Stream(std::move(static_cast<Stream&>(other))), hFile(other.hFile), _buffer(move(other._buffer)), _capacity(other._capacity),
+	: Stream(std::move(static_cast<Stream&>(other))), _hFile(other._hFile), 
+	_buffer(move(other._buffer)), _capacity(other._capacity),
 	_readPos(other._readPos), _readLen(other._readLen), _writePos(other._writePos)
 {
-	other.hFile = INVALID_HANDLE_VALUE;
+	other._hFile = INVALID_HANDLE_VALUE;
 	other._position = 0;
 	other._readable = false;
 	other._writeable = false;
@@ -68,14 +70,14 @@ FileStream& FileStream::operator=(FileStream&& other) noexcept
 	{
 		auto result = this->close(); //不处理返回值
 		Stream::operator=(static_cast<Stream&&>(other));
-		this->hFile = other.hFile;
+		this->_hFile = other._hFile;
 		this->_buffer = move(other._buffer);
 		this->_capacity = other._capacity;
 		this->_readPos = other._readPos;
 		this->_readLen = other._readLen;
 		this->_writePos = other._writePos;
 
-		other.hFile = INVALID_HANDLE_VALUE;
+		other._hFile = INVALID_HANDLE_VALUE;
 		other._position = 0;
 		other._readable = false;
 		other._writeable = false;
@@ -95,11 +97,11 @@ FileStream::~FileStream()
 
 std::expected<void, std::string> FileStream::close()
 {
-	if (this->hFile != INVALID_HANDLE_VALUE)
+	if (this->_hFile != INVALID_HANDLE_VALUE)
 	{
 		auto result = this->flush(true); CHECK_RESULT(result);
-		auto ret = CloseHandle(this->hFile);
-		this->hFile = INVALID_HANDLE_VALUE;
+		auto ret = CloseHandle(this->_hFile);
+		this->_hFile = INVALID_HANDLE_VALUE;
 		if(ret == FALSE)
 		{
 			return std::unexpected(WinUtils::getError("CloseHandle"));
@@ -111,7 +113,7 @@ std::expected<void, std::string> FileStream::close()
 
 std::expected<void, std::string> FileStream::setLength(long value)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!");
 	}
@@ -150,7 +152,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 	BOOL ret;
 	if (this->_position != value)
 	{
-		ret = SetFilePointerEx(this->hFile, setPos, &newPos, SEEK_SET);
+		ret = SetFilePointerEx(this->_hFile, setPos, &newPos, SEEK_SET);
 		if (ret == FALSE)
 		{
 			return std::unexpected(WinUtils::getError("SetFilePointerEx"));
@@ -158,7 +160,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 	}
 
 	//设置之后就要进行截断。
-	ret = SetEndOfFile(this->hFile);  //将文件物理末尾位置设置为当前文件指针所在的位置，截断或者扩展， 文件指针在末尾之后，拉长
+	ret = SetEndOfFile(this->_hFile);  //将文件物理末尾位置设置为当前文件指针所在的位置，截断或者扩展， 文件指针在末尾之后，拉长
 	if (ret == FALSE)
 	{
 		return std::unexpected(WinUtils::getError("SetEndOfFile"));
@@ -170,7 +172,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 		if (position < value)
 		{
 			setPos.QuadPart = position;
-			ret = SetFilePointerEx(this->hFile, setPos, &newPos, SEEK_SET); //原始位置比长度小，就从头开始恢复。
+			ret = SetFilePointerEx(this->_hFile, setPos, &newPos, SEEK_SET); //原始位置比长度小，就从头开始恢复。
 			if (ret == FALSE)
 			{
 				return std::unexpected(WinUtils::getError("SetFilePointerEx"));
@@ -179,7 +181,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 		else if (position > value)
 		{
 			setPos.QuadPart = 0;
-			ret = SetFilePointerEx(this->hFile, setPos, &newPos, SEEK_END);//原始位置比长度大，文件已经截断，需要重新定位指针到文件末尾。
+			ret = SetFilePointerEx(this->_hFile, setPos, &newPos, SEEK_END);//原始位置比长度大，文件已经截断，需要重新定位指针到文件末尾。
 			if (ret == FALSE)
 			{
 				return std::unexpected(WinUtils::getError("SetFilePointerEx"));
@@ -193,14 +195,14 @@ std::expected<void, std::string> FileStream::setLength(long value)
 std::expected<long, std::string> FileStream::getLength()
 {
 
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!");
 	}
 
 	LARGE_INTEGER size;
 	//获取文件尺寸
-	auto result = GetFileSizeEx(this->hFile, &size);
+	auto result = GetFileSizeEx(this->_hFile, &size);
 	if (result == FALSE)
 	{
 		throw invalid_argument("GetFileSizeEx");
@@ -217,7 +219,7 @@ std::expected<long, std::string> FileStream::getLength()
 
 std::expected<long, std::string> FileStream::getPosition()
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -227,7 +229,7 @@ std::expected<long, std::string> FileStream::getPosition()
 
 std::expected<void, std::string> FileStream::setPosition(long value)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -268,7 +270,7 @@ std::expected<void, std::string> FileStream::flush()
 
 std::expected<void, std::string> FileStream::flush(bool flushToDisk)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -291,7 +293,7 @@ std::expected<void, std::string> FileStream::flush(bool flushToDisk)
 
 	if (flushToDisk)
 	{
-		auto ret = FlushFileBuffers(this->hFile);
+		auto ret = FlushFileBuffers(this->_hFile);
 		if (ret == FALSE)
 		{
 			return std::unexpected(WinUtils::getError("FlushFileBuffers"));
@@ -303,7 +305,7 @@ std::expected<void, std::string> FileStream::flush(bool flushToDisk)
 
 std::expected<long, std::string> FileStream::seek(long offset, SeekOrigin origin)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -384,7 +386,7 @@ std::expected<long, std::string> FileStream::seek(long offset, SeekOrigin origin
 //读取文件
 std::expected<long, std::string> FileStream::basic_read(char* array, int size, int offset, int count)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -464,7 +466,7 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 //写入文件
 std::expected<long, std::string>  FileStream::basic_write(const char* array, int size, int offset, int count)
 {
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
 	}
@@ -571,7 +573,7 @@ std::expected<long, std::string> FileStream::writeCore(const char* data, int siz
 		return std::unexpected("无效的缓冲区大小或者偏移量");
 	}
 	DWORD wSize = 0;
-	auto ret = WriteFile(this->hFile, data + offset, count, &wSize, NULL);
+	auto ret = WriteFile(this->_hFile, data + offset, count, &wSize, NULL);
 	if (ret == FALSE)
 	{
 		return std::unexpected(WinUtils::getError("WriteFile"));
@@ -587,7 +589,7 @@ std::expected<long, std::string> FileStream::readCore(char* data, int size, int 
 		return std::unexpected("无效的缓冲区大小或者偏移量");
 	}
 	DWORD rSize = 0;
-	auto ret = ReadFile(this->hFile, data + offset, count, &rSize, NULL);
+	auto ret = ReadFile(this->_hFile, data + offset, count, &rSize, NULL);
 	if (ret == FALSE)
 	{
 		return std::unexpected(WinUtils::getError("ReadFile"));
@@ -602,7 +604,7 @@ std::expected<long, std::string> FileStream::seekCore(long offset, SeekOrigin or
 	LARGE_INTEGER setPos;  //要设置的位置
 	LARGE_INTEGER newPos;	//新返回的位置
 	setPos.QuadPart = offset;
-	BOOL ret = SetFilePointerEx(this->hFile, setPos, &newPos, static_cast<DWORD>(origin));
+	BOOL ret = SetFilePointerEx(this->_hFile, setPos, &newPos, static_cast<DWORD>(origin));
 	if (ret == FALSE)
 	{
 		return std::unexpected(WinUtils::getError("SetFilePointerEx"));
@@ -613,28 +615,27 @@ std::expected<long, std::string> FileStream::seekCore(long offset, SeekOrigin or
 
 
 
-std::expected<void, std::string> FileStream::init(std::string_view filepath, FileAccess fileAccess, 
-	FileShare fileShare, FileMode fileMode)
+std::expected<void, std::string> FileStream::init()
 {
-	if (filepath.empty())
+	if (this->_filepath.empty())
 	{
 		return std::unexpected("文件路径不能为空");
 	}
 
 	DWORD dwAccess = 0;
-	if (fileAccess == FileAccess::ReadWrite)
+	if (this->_fileAccess == FileAccess::ReadWrite)
 	{
 		dwAccess = GENERIC_READ | GENERIC_WRITE;
 		this->_readable = true;
 		this->_writeable = true;
 	}
-	else if (fileAccess == FileAccess::Read)
+	else if (this->_fileAccess == FileAccess::Read)
 	{
 		dwAccess = GENERIC_READ;
 		this->_readable = true;
 		this->_writeable = false;
 	}
-	else if (fileAccess == FileAccess::Write)
+	else if (this->_fileAccess == FileAccess::Write)
 	{
 		dwAccess = GENERIC_WRITE;
 		this->_writeable = true;
@@ -642,15 +643,15 @@ std::expected<void, std::string> FileStream::init(std::string_view filepath, Fil
 	}
 
 	DWORD dwShareMode = 0;
-	if (fileShare == FileShare::ReadWrite)
+	if (this->_fileShare == FileShare::ReadWrite)
 	{
 		dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
 	}
-	else if (fileShare == FileShare::Read)
+	else if (this->_fileShare == FileShare::Read)
 	{
 		dwShareMode = FILE_SHARE_READ;
 	}
-	else if (fileShare == FileShare::Write)
+	else if (this->_fileShare == FileShare::Write)
 	{
 		dwShareMode = FILE_SHARE_WRITE;
 	}
@@ -658,9 +659,9 @@ std::expected<void, std::string> FileStream::init(std::string_view filepath, Fil
 
 	DWORD dwFileMode = 0;
 
-	if (fileMode == FileMode::Append)
+	if (this->_fileMode == FileMode::Append)
 	{
-		if (fileAccess != FileAccess::Write)
+		if (this->_fileAccess != FileAccess::Write)
 		{
 			return std::unexpected("追加模式只能与写入权限一起使用");
 		}
@@ -671,15 +672,15 @@ std::expected<void, std::string> FileStream::init(std::string_view filepath, Fil
 	}
 	else
 	{
-		dwFileMode = static_cast<DWORD>(fileMode);
+		dwFileMode = static_cast<DWORD>(this->_fileMode);
 		if (dwFileMode < CREATE_NEW || dwFileMode > TRUNCATE_EXISTING)
 		{
 			return std::unexpected("不合法的FileMode");
 		}
 	}
 
-	wstring wpath = Encoding::GBKToUTF16(filepath);
-	this->hFile = CreateFileW(wpath.c_str(),
+	wstring wpath = Encoding::GBKToUTF16(this->_filepath);
+	this->_hFile = CreateFileW(wpath.c_str(),
 		dwAccess,   //文件访问权限 读写  如果是0就是不请求只是用来查询
 		dwShareMode,    //指定文件共享模式 允许其他进程读取这个文件
 		NULL,				//安全属性  NULL表示默认安全描述符，文件句柄不能被子进程继承
@@ -687,22 +688,22 @@ std::expected<void, std::string> FileStream::init(std::string_view filepath, Fil
 		0,				//文件属性和标志  FILE_ATTRIBUTE_NORMAL表示普通文件，可以在这里设置FILE_FLAG_OVERLAPPED等标志来控制文件的行为
 		NULL);				//模板文件句柄 0表示不使用模板文件
 
-	if (this->hFile == INVALID_HANDLE_VALUE)
+	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected(WinUtils::getError("CreateFileW"));
 	}
 
 
-	auto fileType = GetFileType(this->hFile);
+	auto fileType = GetFileType(this->_hFile);
 
 	if (fileType != FILE_TYPE_DISK)
 	{
-		CloseHandle(this->hFile);
+		CloseHandle(this->_hFile);
 		return std::unexpected("仅支持磁盘文件");
 	}
 
 
-	if (fileMode == FileMode::Append)
+	if (this->_fileMode == FileMode::Append)
 	{
 		auto result = this->seekCore(0, SeekOrigin::End);  //追加模式下移动到末尾
 		if (!result)
@@ -725,7 +726,13 @@ TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode file
 {
 	TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess, fileShare, bufferSize));
 
-    return std::expected<std::unique_ptr<FileStream>, std::string>();
+	auto result = ptr->init();
+	if (!result)
+	{
+		return std::unexpected(result.error());
+	}
+
+    return ptr;
 }
 
 TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
@@ -733,8 +740,13 @@ TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode file
 {
 	TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess, fileShare, defaultBufferSize));
 
+	auto result = ptr->init();
+	if (!result)
+	{
+		return std::unexpected(result.error());
+	}
 
-	return std::unexpected("");
+    return ptr;
 }
 
 TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode fileMode, 
@@ -742,5 +754,11 @@ TPResult<FileStream> FileStream::create(std::string_view filepath, FileMode file
 {
     TPtr<FileStream> ptr = TPtr<FileStream>(new FileStream(filepath, fileMode, fileAccess));
 	
-	return std::unexpected("");
+	auto result = ptr->init();
+	if (!result)
+	{
+		return std::unexpected(result.error());
+	}
+
+    return ptr;
 }

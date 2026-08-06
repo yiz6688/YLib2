@@ -31,9 +31,10 @@ public:
 		double fact = 1.0 * 2 * M_PI / N;
 		for (int i = 0; i < N; i++)
 		{
-			win[i] = coef[0] + coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i)
-				+ coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
-			//ofs << win[i] << endl;
+			//win[i] = coef[0] + coef[1] * cos(fact * i) + coef[2] * cos(2 * fact * i)
+			//	+ coef[3] * cos(3 * fact * i) + coef[4] * cos(4 * fact * i);
+			win[i] = coef[0] + coef[1] * cos(2*M_PI*i / N) + coef[2] * cos(4*M_PI*i/N)
+            +coef[3]*cos(6*M_PI*i/N) + coef[4]*cos(8*M_PI*i/N);
 		}
 
 		return win;

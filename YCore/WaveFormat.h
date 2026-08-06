@@ -131,6 +131,8 @@ protected:
     int bytesPerSec;
     // 扩展大小
     short extraSize{ -1 };
+
+    std::vector<char> extraData;
 };
 
 

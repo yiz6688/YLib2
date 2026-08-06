@@ -1,6 +1,6 @@
 #pragma once
 #include<atomic>
-#include<memory>
+#include<vector>
 #include<span>
 /// <summary>
 /// 环形缓冲区
@@ -19,11 +19,18 @@
 */
 class RingBuffer
 {
+	struct param
+	{
+		unsigned pos;
+		unsigned len;
+	};
+
+
 public:
 	//构造指定大小的缓冲区
-	RingBuffer(int bufferSize);
+	RingBuffer(unsigned bufferSize);
 	//使用外部空间包装环形缓冲区
-	RingBuffer(char* buffer, int size);
+	RingBuffer(char* buffer, unsigned size);
 
 	~RingBuffer();
 
@@ -47,18 +54,35 @@ public:
 	//写入到另一个环形缓冲区
 	int writeTo(RingBuffer& ring, int size);
 
+
+	std::span<char> getWriteBuffer(unsigned size);
+
+	int releaseWriteBuffer(unsigned size);
+
+	int releaseWriteBuffer();
+
+	std::span<char> getReadBuffer(unsigned size);
+
+	int releaseReadBuffer(unsigned size);
+
+	int releaseReadBuffer();
+
+
+
+
 	//清空
 	void reset()
 	{
-		this->write_pos.store(0, std::memory_order_release);
-		this->used_count.store(0, std::memory_order_release);
+		this->read_param.store({0,0}, std::memory_order_release);
+		this->write_param.store({0,0}, std::memory_order_release);
 	}
 
 
 	size_t getReadableBytes()
 	{
-		auto value = this->used_count.load(std::memory_order_acquire);
-		return value;
+		auto wparam = this->write_param.load(std::memory_order_acquire);
+		auto rparam = this->read_param.load(std::memory_order_acquire);
+		return wparam.pos - rparam.pos;
 	}
 
 	size_t getWriteableBytes()
@@ -72,32 +96,17 @@ public:
 	}
 
 private:
-	size_t getReadPos() //获取读指针
-	{
-		auto writePos = this->write_pos.load(std::memory_order_acquire);
-		auto usedCount = this->used_count.load(std::memory_order_acquire);
-
-		auto readPos = writePos - usedCount;
-		if (readPos < 0)
-		{
-			readPos += this->_capacity;
-		}
-
-		return readPos;
-	}
-
-private:
 
 	//容量大小
-	long _capacity;
+	unsigned _capacity;
 	//内部分配的空间
-	std::unique_ptr<char[]> _buffer;
+	std::vector<char> _buffer;
 	//缓冲区的引用
 	char* _ptr{ nullptr };
 
-	// 写指针位置
-	alignas(64) std::atomic<size_t> write_pos{ 0 }; 
-	// 已使用的空间数量
-	alignas(64) std::atomic<size_t> used_count{ 0 }; 
+
+    alignas(64) std::atomic<param> write_param{ param{0,0} }; 
+
+	alignas(64) std::atomic<param> read_param{ param{0,0} };
 
 };

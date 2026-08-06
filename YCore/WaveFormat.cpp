@@ -183,6 +183,11 @@ std::expected<void, std::string> WaveFormat::writeTo(Stream* stream)
         if (this->extraSize != -1)
         {
             writer.tryWrite(int16_t(this->extraSize));
+            auto ret = stream->write(this->extraData.data(), static_cast<int>(this->extraData.size()));
+            if (!ret)
+            {
+                return std::unexpected{ "Failed to write extra data" };
+            }
         }
     }
     catch (const std::exception& ex)
