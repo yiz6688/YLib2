@@ -26,8 +26,11 @@ RingBuffer::RingBuffer(RingBuffer&& value) noexcept
 	this->_capacity = value._capacity;
 	this->_buffer = std::move(value._buffer);
 	this->_ptr = value._ptr;
-	this->write_param.store(value.write_param.load());
-	this->read_param.store(value.read_param.load());
+	this->write_pos.store(value.write_pos.load());
+	this->read_pos.store(value.read_pos.load());
+	
+	this->write_lock_len = value.write_lock_len;
+	this->read_lock_len = value.read_lock_len;
 }
 
 RingBuffer& RingBuffer::operator=(RingBuffer&& value) noexcept
@@ -39,8 +42,10 @@ RingBuffer& RingBuffer::operator=(RingBuffer&& value) noexcept
 	this->_capacity = value._capacity;
 	this->_buffer = std::move(value._buffer);
 	this->_ptr = value._ptr;
-	this->write_param.store(value.write_param.load());
-	this->read_param.store(value.read_param.load());
+	this->write_pos.store(value.write_pos.load());
+	this->read_pos.store(value.read_pos.load());
+	this->write_lock_len = value.write_lock_len;
+	this->read_lock_len = value.read_lock_len;
 	return *this;
 }
 
@@ -51,21 +56,24 @@ int RingBuffer::read(char* buffer, int size)
 
 int RingBuffer::read(char* buffer, int offset, int size)
 {
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
 
-	if(rparam.len != 0)
+	if(this->read_lock_len != 0 || size == 0)
 	{
 		return 0;
 	}
 
-	int readPos = rparam.pos & this->_capacity;
-	if (readPos < 0)
-	{
-		readPos += this->_capacity;
-	}
+	auto wpos = this->write_pos.load(std::memory_order_acquire);
+	auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
-	auto readBytes = wparam.pos - rparam.pos;
+	
+
+	int readPos = rpos & this->_capacity;
+	// if (readPos < 0)
+	// {
+	// 	readPos += this->_capacity;
+	// }
+
+	auto readBytes = wpos - rpos;
 	if (readBytes > size)
 	{
 		readBytes = size;  //修正可读数量
@@ -86,8 +94,8 @@ int RingBuffer::read(char* buffer, int offset, int size)
 		std::copy_n(this->_ptr, size2, buffer + offset);
 	}
 
-	rparam.pos += readBytes;
-	this->read_param.store(rparam, std::memory_order_release);//或者更新已用空间容量。
+	rpos += readBytes;
+	this->read_pos.store(rpos, std::memory_order_release);//或者更新已用空间容量。
 
 
 	return readBytes;
@@ -105,14 +113,16 @@ int RingBuffer::write(const char* data, int size)
 */
 int RingBuffer::write(const char* data, int offset, int size)
 {
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
-	if(wparam.len != 0)
+	if(this->write_lock_len != 0 || size == 0)
 	{
 		return 0;
 	}
 
-	auto writePos = wparam.pos & this->_capacity;
+	auto wpos = this->write_pos.load(std::memory_order_relaxed);
+	auto rpos = this->read_pos.load(std::memory_order_acquire);
+	
+
+	auto writePos = wpos & this->_capacity;
 	//auto remaindBytes = this->_capacity - usedCount;  //剩余容量
 	auto writeBytes = size;
 	if (writeBytes > this->_capacity)
@@ -134,14 +144,14 @@ int RingBuffer::write(const char* data, int offset, int size)
 		std::copy_n(data + offset, size2, this->_ptr); //从头部开始写
 	}
 
-	wparam.pos += writeBytes;
+	wpos += writeBytes;
 	writePos += writeBytes;
-	if (writePos > this->_capacity)
-	{
-		writePos -= this->_capacity;
-	}
+	// if (writePos > this->_capacity)
+	// {
+	// 	writePos -= this->_capacity;
+	// }
 
-	this->write_param.store(wparam, std::memory_order::release);
+	this->write_pos.store(wpos, std::memory_order::release);
 
 	return writeBytes;
 }
@@ -188,148 +198,121 @@ int RingBuffer::writeTo(RingBuffer& ring, int size)
 
 std::span<char> RingBuffer::getWriteBuffer(unsigned size)
 {
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
+	auto wpos = this->write_pos.load(std::memory_order_relaxed);
+	auto writePos = wpos & this->_capacity;  //相当于求余
+	auto wptr = this->_ptr + writePos;  //写指针起始位置。
 
-	auto wpos = wparam.pos & this->_capacity;  //相当于求余
-	auto wptr = this->_ptr + wpos;  //写指针起始位置。
-
-	if(size == 0 || wparam.len != 0)
+	if(size == 0 || this->write_lock_len != 0)
 	{
 		return std::span<char>(wptr, 0);
 	}
 
-	auto writableBytes = this->_capacity + rparam.pos - wparam.pos;  //剩余可写入的空间
+	auto rpos = this->read_pos.load(std::memory_order_acquire);
+
+	auto writableBytes = this->_capacity + rpos - wpos;  //剩余可写入的空间
 	auto tailBytes = this->_capacity - wpos;  //写指针到尾部的空间
 	if(tailBytes > writableBytes) //说明没有回绕
 	{
-		wparam.len = writableBytes > size ? size : writableBytes;
+		this->write_lock_len = writableBytes > size ? size : writableBytes;
 	}else
 	{
-		wparam.len = tailBytes > size ? size : tailBytes;
+		this->write_lock_len = tailBytes > size ? size : tailBytes;
 	}
 
-	this->write_param.store(wparam, std::memory_order_release);
-    return std::span<char>(wptr, wparam.len);
+	this->write_pos.store(wpos, std::memory_order_release);
+    return std::span<char>(wptr, this->write_lock_len);
 }
 
 int RingBuffer::releaseWriteBuffer(unsigned size)
 {
-	if(size == 0)
+	if(size == 0 || this->write_lock_len == 0)
 	{
 		return 0;
+	}else if(size == std::numeric_limits<unsigned>::max())
+	{
+		size = this->write_lock_len;
 	}
+
+	if(size > this->write_lock_len)
+	{
+		size = this->write_lock_len;
+	}
+
 	//这里必定不会产生回绕
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	if(wparam.len == 0)
-	{
-		return 0;
-	}
+	auto wpos = this->write_pos.load(std::memory_order_relaxed);
 
-	auto rparam = this->read_param.load(std::memory_order_acquire);
+	auto rpos = this->read_pos.load(std::memory_order_acquire);
 
-	auto wpos = wparam.pos & this->_capacity;  //相当于求余
-	auto wptr = this->_ptr + wpos;  //写指针起始位置。
+	auto writePos = wpos & this->_capacity;  //相当于求余
+	auto wptr = this->_ptr + writePos;  //写指针起始位置。
 
-	auto releaseSize = wparam.len > size ? size : wparam.len;
-	wparam.pos += releaseSize;
-	wparam.len -= releaseSize;
+	auto releaseSize = this->write_lock_len > size ? size : this->write_lock_len;
+	wpos += releaseSize;
+	this->write_lock_len -= releaseSize;
 
-	this->write_param.store(wparam, std::memory_order_release);
+	this->write_pos.store(wpos, std::memory_order_release);
     return releaseSize;
 }
 
 int RingBuffer::releaseWriteBuffer()
 {
-    //这里必定不会产生回绕
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	if(wparam.len == 0)
-	{
-		return 0;
-	}
-	auto rparam = this->read_param.load(std::memory_order_acquire);
-
-	auto wpos = wparam.pos & this->_capacity;  //相当于求余
-	auto wptr = this->_ptr + wpos;  //写指针起始位置。
-	auto releaseSize = wparam.len;
-	wparam.pos += releaseSize;
-	wparam.len -= releaseSize;
-
-	this->write_param.store(wparam, std::memory_order_release);
-    return releaseSize;
+   return this->releaseWriteBuffer(-1);
 }
 
 std::span<char> RingBuffer::getReadBuffer(unsigned size)
 {
-    auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
+	auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
-	auto rpos = wparam.pos & this->_capacity;  //相当于求余
-	auto rptr = this->_ptr + rpos;  //写指针起始位置。
+	auto readPos = rpos & this->_capacity;  //相当于求余
+	auto rptr = this->_ptr + readPos;  //写指针起始位置。
 
-	if(size == 0 || rparam.len != 0)
+	if(size == 0 || this->read_lock_len == 0)
 	{
 		return std::span<char>(rptr, 0);
 	}
+	
+	auto wpos = this->write_pos.load(std::memory_order_acquire);
 
-	auto redableBytes = wparam.pos - rparam.pos;  //剩余可写入的空间
-	auto tailBytes = this->_capacity - rpos;  //写指针到尾部的空间
+	auto redableBytes = wpos - rpos;  //剩余可写入的空间
+	auto tailBytes = this->_capacity - readPos;  //写指针到尾部的空间
 	if(tailBytes > redableBytes) //说明没有回绕
 	{
-		rparam.len = redableBytes > size ? size : redableBytes;
+		this->read_lock_len = redableBytes > size ? size : redableBytes;
 	}else
 	{
-		rparam.len = tailBytes > size ? size : tailBytes;
+		this->read_lock_len = tailBytes > size ? size : tailBytes;
 	}
 
-	this->write_param.store(wparam, std::memory_order_release);
-    return std::span<char>(rptr, rparam.len);
+	this->read_pos.store(rpos, std::memory_order_release);
+    return std::span<char>(rptr, this->read_lock_len);
 }
 
 int RingBuffer::releaseReadBuffer(unsigned size)
 {
-    if(size == 0)
+    if(size == 0 || this->read_lock_len == 0)
 	{
 		return 0;
+	}else if(this->read_lock_len == std::numeric_limits<unsigned>::max())
+	{
+		size = this->read_lock_len;
 	}
 	//这里必定不会产生回绕
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
-	if(rparam.len == 0)
-	{
-		return 0;
-	}
-
+	auto wpos = this->write_pos.load(std::memory_order_acquire);
+	auto rpos = this->read_pos.load(std::memory_order_relaxed);
 	
 
-	auto rpos = rparam.pos & this->_capacity;  //相当于求余
+	auto readPos = rpos & this->_capacity;  //相当于求余
 	auto rptr = this->_ptr + rpos;  //写指针起始位置。
 
-	auto releaseSize = rparam.len > size ? size : rparam.len;
-	rparam.pos += releaseSize;
-	rparam.len -= releaseSize;
+	auto releaseSize = this->read_lock_len > size ? size : this->read_lock_len;
+	rpos += releaseSize;
+	this->read_lock_len -= releaseSize;
 
-	this->read_param.store(rparam, std::memory_order_release);
+	this->read_pos.store(rpos, std::memory_order_release);
     return releaseSize;
 }
 
 int RingBuffer::releaseReadBuffer()
 {
-    //这里必定不会产生回绕
-	auto wparam = this->write_param.load(std::memory_order_acquire);
-	auto rparam = this->read_param.load(std::memory_order_acquire);
-	if(rparam.len == 0)
-	{
-		return 0;
-	}
-	
-
-	auto rpos =rparam.pos & this->_capacity;  //相当于求余
-	auto wptr = this->_ptr + rpos;  //写指针起始位置。
-	auto releaseSize = rparam.len;
-	rparam.pos += releaseSize;
-	rparam.len -= releaseSize;
-
-	this->read_param.store(rparam, std::memory_order_release);
-    return releaseSize;
+	return this->releaseReadBuffer(-1);
 }

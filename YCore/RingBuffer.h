@@ -19,13 +19,6 @@
 */
 class RingBuffer
 {
-	struct param
-	{
-		unsigned pos;
-		unsigned len;
-	};
-
-
 public:
 	//构造指定大小的缓冲区
 	RingBuffer(unsigned bufferSize);
@@ -73,16 +66,18 @@ public:
 	//清空
 	void reset()
 	{
-		this->read_param.store({0,0}, std::memory_order_release);
-		this->write_param.store({0,0}, std::memory_order_release);
+		this->read_pos.store(0, std::memory_order_release);
+		this->write_pos.store(0, std::memory_order_release);
+		this->write_lock_len = 0;
+		this->read_lock_len = 0;
 	}
 
 
 	size_t getReadableBytes()
 	{
-		auto wparam = this->write_param.load(std::memory_order_acquire);
-		auto rparam = this->read_param.load(std::memory_order_acquire);
-		return wparam.pos - rparam.pos;
+		auto wpos = this->write_pos.load(std::memory_order_acquire);
+		auto rpos = this->read_pos.load(std::memory_order_acquire);
+		return wpos - rpos;
 	}
 
 	size_t getWriteableBytes()
@@ -105,8 +100,12 @@ private:
 	char* _ptr{ nullptr };
 
 
-    alignas(64) std::atomic<param> write_param{ param{0,0} }; 
+    alignas(64) std::atomic<unsigned> write_pos{ 0 }; 
 
-	alignas(64) std::atomic<param> read_param{ param{0,0} };
+	alignas(64) std::atomic<unsigned> read_pos{ 0 };
+
+	unsigned write_lock_len{ 0 };
+
+	unsigned read_lock_len{ 0 };
 
 };

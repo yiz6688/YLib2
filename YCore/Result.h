@@ -3,6 +3,162 @@
 #include<string>
 #include<stdexcept>
 #include<utility>
+
+
+
+template<typename T>
+class Result1
+{
+
+public:
+	Result1()
+		:code{ 0 }, error{}
+	{
+		new(&this->_value)T(); //调用默认构造
+	}
+
+	Result1(int _code, const std::string& _err)
+		:code{ _code }, error{_err}
+	{
+		if(this->code == 0)
+		{
+			new(&this->_value)T();
+			this->error = "";
+		}
+	}
+
+	Result1(Result1&& obj)
+	{
+		this->code = obj.code;
+		this->error = std::move(obj.error);
+		if(this->code == 0)
+		{
+			this->_value = std::move(obj._value);
+		}
+		
+		obj.code = -1;
+	}
+
+
+	Result1& operator=(Result1&& obj)
+	{
+		if(this == &obj)
+		{
+			return *this;
+		}
+
+		this->code = obj.code;
+		this->error = std::move(obj.error);
+		if(this->code == 0)
+		{
+			this->_value = std::move(obj._value);
+		}
+		obj.code = -1;
+
+	}
+
+
+
+	~Result1()
+	{
+		if(this->code == 0)
+		{
+			this->_value.~T();  //调用析构
+			this->code = -1;
+		}
+	}
+
+public:
+	void setValue(T& value)
+	{
+		if(this->code == 0)
+		{
+			this->_value.~T();
+		}
+
+		this->_value = std::move(value);
+		this->code = 0;
+		this->error = "";
+	}
+
+	void setFail(const std::string& err)
+	{
+		if(this->code == 0)
+		{
+			this->_value.~T();
+		}
+		this->error = std::move(err);
+		this->code = -1;
+	}
+
+	void setFail(int _code, const std::string& err)
+	{
+		if(_code == 0)
+		{
+			throw std::runtime_error("setFail code 不能为0");
+		}
+
+		if(this->code == _code)
+		{
+			this->error = std::move(err);
+			return;
+		}
+
+		if(this->code == 0)
+		{
+			this->_value.~T();
+		}
+
+		this->code = _code;
+		this->error = std::move(err);
+
+	}
+
+
+public:
+
+	int getCode()
+	{
+		return this->code;
+	}
+
+	const std::string& getError()
+	{
+		return this->error;
+	}
+
+	T& value()
+	{
+		if (this->code == 0)
+		{
+			return this->_value;
+		}
+		else
+		{
+			throw std::runtime_error("没有值");
+		}
+	}
+
+
+protected:
+	
+	int code;
+	std::string error;
+	union
+	{
+		T _value;
+		char _dummy;  //占位符，保证union至少有一个成员
+	};
+	bool hasValue = false;  //标记是否有值
+};
+
+
+
+
+
+
+
+
 class Result : public LogBuffer
 {
 

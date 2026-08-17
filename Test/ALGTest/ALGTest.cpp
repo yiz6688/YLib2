@@ -81,7 +81,20 @@ int main()
     //sweepTest();
     //corrTest2();
     //sweepTest2();
+    char *ptr = new char;
 
+    *ptr = 'a';
+
+    std::println("{}", *ptr);
+
+    delete ptr;
+    ptr = nullptr;
+    *ptr = 'b';
+
+    std::println("{}", *ptr);
+
+
+    return 0;
     std::vector<char> vec;
     vec.reserve(100);
 
