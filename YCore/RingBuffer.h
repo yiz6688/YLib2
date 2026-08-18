@@ -19,6 +19,10 @@
 */
 class RingBuffer
 {
+
+private:
+	using TYPE1 = unsigned;	
+
 public:
 	//构造指定大小的缓冲区
 	RingBuffer(unsigned bufferSize);
@@ -48,15 +52,15 @@ public:
 	int writeTo(RingBuffer& ring, int size);
 
 
-	std::span<char> getWriteBuffer(unsigned size);
+	std::span<char> getWriteBuffer(TYPE1 size);
 
-	int releaseWriteBuffer(unsigned size);
+	int releaseWriteBuffer(TYPE1 size);
 
 	int releaseWriteBuffer();
 
-	std::span<char> getReadBuffer(unsigned size);
+	std::span<char> getReadBuffer(TYPE1 size);
 
-	int releaseReadBuffer(unsigned size);
+	int releaseReadBuffer(TYPE1 size);
 
 	int releaseReadBuffer();
 
@@ -77,12 +81,12 @@ public:
 	{
 		auto wpos = this->write_pos.load(std::memory_order_acquire);
 		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return wpos - rpos;
+		return ( wpos - rpos ) & this->_mask;
 	}
 
 	size_t getWriteableBytes()
 	{
-		return this->_capacity - this->getReadableBytes();
+		return this->_cap_aligned - this->getReadableBytes();
 	}
 
 	size_t getCapacity()
@@ -90,22 +94,34 @@ public:
 		return this->_capacity;
 	}
 
+
+
+
 private:
 
-	//容量大小
+	//总容量大小
 	unsigned _capacity;
+	//进行取余使用，是2的幂次方减1
+	unsigned _mask;  //_capacity - 1;
+	//空过的字符数
+	unsigned _gap;  //空的字符数至少1个
+	//对齐后的容量
+	unsigned _cap_aligned; //跟元素对齐后的容量
+	//可用总容量
+	unsigned _max_size;   //最大可用容量= _cap_aligned - _gap
+
 	//内部分配的空间
 	std::vector<char> _buffer;
 	//缓冲区的引用
 	char* _ptr{ nullptr };
 
 
-    alignas(64) std::atomic<unsigned> write_pos{ 0 }; 
+    alignas(64) std::atomic<TYPE1> write_pos{ 0 }; 
 
-	alignas(64) std::atomic<unsigned> read_pos{ 0 };
+	alignas(64) std::atomic<TYPE1> read_pos{ 0 };
 
-	unsigned write_lock_len{ 0 };
+	TYPE1 write_lock_len{ 0 };
 
-	unsigned read_lock_len{ 0 };
+	TYPE1 read_lock_len{ 0 };
 
 };
