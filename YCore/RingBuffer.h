@@ -65,7 +65,41 @@ public:
 	int releaseReadBuffer();
 
 
+private:
+	TYPE1 calcReadableBytes(TYPE1 wpos, TYPE1 rpos)
+	{
+		auto bytes = (wpos - rpos) & this->_mask;
+		if(this->_cap_aligned != this->_capacity)
+		{
+			auto writePos = wpos & this->_mask;
+			auto readPos = rpos & this->_mask;
+			if(writePos < readPos)  //不在一圈，多加了尾巴
+			{
+				bytes = bytes - (this->_capacity - this->_cap_aligned);  //减去多余的内容
+			}
+		}
+		return bytes;
+	}
 
+	TYPE1 calcWriteableBytes(TYPE1 wpos, TYPE1 rpos)
+	{
+		auto readableBytes = this->calcReadableBytes(wpos, rpos);
+		auto bytes = this->_max_size - readableBytes;
+		return bytes;
+	}
+
+	TYPE1 calcPos(TYPE1 pos, TYPE1 size)
+	{
+		pos += size;
+		if(pos = this->_cap_aligned)
+		{
+			pos +=(this->_capacity - this->_cap_aligned);
+		}
+		return pos;
+	}
+
+
+public:
 
 	//清空
 	void reset()
@@ -77,16 +111,21 @@ public:
 	}
 
 
+
 	size_t getReadableBytes()
 	{
 		auto wpos = this->write_pos.load(std::memory_order_acquire);
 		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return ( wpos - rpos ) & this->_mask;
+		auto bytes = this->calcReadableBytes(wpos, rpos);
+		return bytes;
 	}
 
 	size_t getWriteableBytes()
 	{
-		return this->_cap_aligned - this->getReadableBytes();
+		auto wpos = this->write_pos.load(std::memory_order_acquire);
+		auto rpos = this->read_pos.load(std::memory_order_acquire);
+		auto bytes = this->calcWriteableBytes(wpos, rpos);
+		return bytes;
 	}
 
 	size_t getCapacity()

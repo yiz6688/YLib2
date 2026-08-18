@@ -84,7 +84,7 @@ int RingBuffer::read(char* buffer, int offset, int size)
 
 	int readPos = rpos & this->_mask;
 
-	auto readableBytes = (wpos - rpos) & this->_mask;
+	auto readableBytes = this->calcReadableBytes(wpos, rpos); //计算可读空间
 	if(readableBytes == 0)
 	{
 		return 0;
@@ -109,7 +109,7 @@ int RingBuffer::read(char* buffer, int offset, int size)
 		std::copy_n(this->_ptr, size2, buffer + offset);
 	}
 
-	rpos += readableBytes;
+	rpos = this->calcPos(rpos, readableBytes);
 	this->read_pos.store(rpos, std::memory_order_release);//或者更新已用空间容量。
 
 
@@ -139,7 +139,7 @@ int RingBuffer::write(const char* data, int offset, int size)
 
 	auto writePos = wpos & this->_mask;
 
-	auto writeableBytes = this->_max_size - (wpos - rpos) & this->_mask;
+	auto writeableBytes = this->calcWriteableBytes(wpos, rpos); //计算可写空间
 	if(writeableBytes == 0)
 	{
 		return 0;
@@ -164,7 +164,7 @@ int RingBuffer::write(const char* data, int offset, int size)
 		std::copy_n(data + offset, size2, this->_ptr); //从头部开始写
 	}
 
-	wpos += writeableBytes;
+	wpos = this->calcPos(wpos, writeableBytes); //修正写指针
 	this->write_pos.store(wpos, std::memory_order::release);
 
 	return writeableBytes;
@@ -223,14 +223,19 @@ std::span<char> RingBuffer::getWriteBuffer(unsigned size)
 
 	auto rpos = this->read_pos.load(std::memory_order_acquire);
 
-	auto writableBytes = this->_max_size - (wpos - rpos) & this->_mask;  //剩余可写入的空间
-	auto tailBytes = this->_cap_aligned - wpos;  //写指针到尾部的空间
-	if(tailBytes > writableBytes) //说明没有回绕
+	auto writeableBytes = this->calcWriteableBytes(wpos, rpos); //计算剩余可写空间
+	if(writeableBytes > size)
 	{
-		this->write_lock_len = writableBytes > size ? size : writableBytes;
+		writeableBytes = size;
+	}
+
+	auto tailBytes = this->_cap_aligned - wpos;  //写指针到尾部的空间
+	if(tailBytes > writeableBytes) //说明没有回绕
+	{
+		this->write_lock_len = writeableBytes;
 	}else
 	{
-		this->write_lock_len = tailBytes > size ? size : tailBytes;
+		this->write_lock_len = tailBytes;
 	}
 
 	this->write_pos.store(wpos, std::memory_order_release);
@@ -257,11 +262,8 @@ int RingBuffer::releaseWriteBuffer(TYPE1 size)
 
 	auto rpos = this->read_pos.load(std::memory_order_acquire);
 
-	auto writePos = wpos & this->_mask;  //相当于求余
-	auto wptr = this->_ptr + writePos;  //写指针起始位置。
-
 	auto releaseSize = this->write_lock_len > size ? size : this->write_lock_len;
-	wpos += releaseSize;
+	wpos = this->calcPos(wpos, releaseSize);
 	this->write_lock_len -= releaseSize;
 
 	this->write_pos.store(wpos, std::memory_order_release);
@@ -287,14 +289,19 @@ std::span<char> RingBuffer::getReadBuffer(TYPE1 size)
 	
 	auto wpos = this->write_pos.load(std::memory_order_acquire);
 
-	auto redableBytes = (wpos - rpos) & this->_mask;  //剩余可写入的空间
-	auto tailBytes = this->_cap_aligned - readPos;  //写指针到尾部的空间
-	if(tailBytes > redableBytes) //说明没有回绕
+	auto readableBytes = this->calcReadableBytes(wpos, rpos); //计算可读空间
+	if(readableBytes > size)
 	{
-		this->read_lock_len = redableBytes > size ? size : redableBytes;
+		readableBytes = size;
+	}
+
+	auto tailBytes = this->_cap_aligned - readPos;  //写指针到尾部的空间
+	if(tailBytes > readableBytes) //说明没有回绕
+	{
+		this->read_lock_len = readableBytes;
 	}else
 	{
-		this->read_lock_len = tailBytes > size ? size : tailBytes;
+		this->read_lock_len = tailBytes;
 	}
 
 	this->read_pos.store(rpos, std::memory_order_release);
@@ -313,13 +320,9 @@ int RingBuffer::releaseReadBuffer(unsigned size)
 	//这里必定不会产生回绕
 	auto wpos = this->write_pos.load(std::memory_order_acquire);
 	auto rpos = this->read_pos.load(std::memory_order_relaxed);
-	
-
-	auto readPos = rpos & this->_mask;  //相当于求余
-	auto rptr = this->_ptr + rpos;  //写指针起始位置。
 
 	auto releaseSize = this->read_lock_len > size ? size : this->read_lock_len;
-	rpos += releaseSize;
+	rpos = this->calcPos(rpos , releaseSize);
 	this->read_lock_len -= releaseSize;
 
 	this->read_pos.store(rpos, std::memory_order_release);
