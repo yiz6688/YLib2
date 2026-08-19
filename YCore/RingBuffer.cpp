@@ -92,6 +92,9 @@ int RingBuffer::read(char* buffer, int offset, int size)
 	if (readableBytes > size)
 	{
 		readableBytes = size;  //修正可读数量
+	}else
+	{
+		rpos += (this->_capacity - this->_cap_aligned); //修正位置
 	}
 
 
@@ -109,7 +112,7 @@ int RingBuffer::read(char* buffer, int offset, int size)
 		std::copy_n(this->_ptr, size2, buffer + offset);
 	}
 
-	rpos = this->calcPos(rpos, readableBytes);
+	rpos += readableBytes;
 	this->read_pos.store(rpos, std::memory_order_release);//或者更新已用空间容量。
 
 
@@ -148,6 +151,9 @@ int RingBuffer::write(const char* data, int offset, int size)
 	if (writeableBytes > size)
 	{
 		writeableBytes = size;
+	}else
+	{
+		wpos += (this->_capacity - this->_cap_aligned);
 	}
 
 	auto size1 = this->_cap_aligned - writePos;  //读指针到尾部的空间
@@ -164,7 +170,7 @@ int RingBuffer::write(const char* data, int offset, int size)
 		std::copy_n(data + offset, size2, this->_ptr); //从头部开始写
 	}
 
-	wpos = this->calcPos(wpos, writeableBytes); //修正写指针
+	wpos += writeableBytes; //修正写指针
 	this->write_pos.store(wpos, std::memory_order::release);
 
 	return writeableBytes;
@@ -229,7 +235,7 @@ std::span<char> RingBuffer::getWriteBuffer(unsigned size)
 		writeableBytes = size;
 	}
 
-	auto tailBytes = this->_cap_aligned - wpos;  //写指针到尾部的空间
+	auto tailBytes = this->_cap_aligned - writePos;  //写指针到尾部的空间
 	if(tailBytes > writeableBytes) //说明没有回绕
 	{
 		this->write_lock_len = writeableBytes;
@@ -263,9 +269,15 @@ int RingBuffer::releaseWriteBuffer(TYPE1 size)
 	auto rpos = this->read_pos.load(std::memory_order_acquire);
 
 	auto releaseSize = this->write_lock_len > size ? size : this->write_lock_len;
-	wpos = this->calcPos(wpos, releaseSize);
-	this->write_lock_len -= releaseSize;
 
+	wpos += releaseSize;
+	auto writePos = wpos & this->_mask;
+	if(writePos  == this->_cap_aligned)
+	{
+		wpos += (this->_capacity - this->_cap_aligned);
+	}
+
+	this->write_lock_len -= releaseSize;
 	this->write_pos.store(wpos, std::memory_order_release);
     return releaseSize;
 }
@@ -322,7 +334,12 @@ int RingBuffer::releaseReadBuffer(unsigned size)
 	auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
 	auto releaseSize = this->read_lock_len > size ? size : this->read_lock_len;
-	rpos = this->calcPos(rpos , releaseSize);
+	rpos += releaseSize;
+	auto readPos = rpos & this->_mask;
+	if(readPos == this->_cap_aligned)
+	{
+		rpos += (this->_capacity - this->_cap_aligned);
+	}
 	this->read_lock_len -= releaseSize;
 
 	this->read_pos.store(rpos, std::memory_order_release);

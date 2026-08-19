@@ -4,6 +4,7 @@
 #include<cstddef>
 #include<vector>
 #include<iostream>
+#include"myType.h"
 using namespace std;
 
 int main()

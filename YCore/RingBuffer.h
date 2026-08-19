@@ -88,10 +88,10 @@ private:
 		return bytes;
 	}
 
-	TYPE1 calcPos(TYPE1 pos, TYPE1 size)
+	TYPE1 calcPos1(TYPE1 pos, TYPE1 size)
 	{
 		pos += size;
-		if(pos = this->_cap_aligned)
+		if(pos == this->_cap_aligned)
 		{
 			pos +=(this->_capacity - this->_cap_aligned);
 		}
