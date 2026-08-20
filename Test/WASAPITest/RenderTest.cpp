@@ -34,8 +34,10 @@ int main()
         println("Render frindlyName:{}, id{}", ep.frindlyName, ep.id);
     }
     
-    WaveReader reader(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
+    //WaveReader reader(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
+    auto readerResult = WaveReader::create(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
 
+    auto& reader = readerResult.value();
     // vector<char> buffer;
     // buffer.resize(4800);
 
@@ -44,7 +46,7 @@ int main()
 
 
     // return 0;
-    auto* render = WASAPIManager::createRender(std::move(RenderEndPoints.front()), reader.getWaveFormat());
+    auto* render = WASAPIManager::createRender(std::move(RenderEndPoints.front()), reader->getWaveFormat());
 
     if(render == nullptr)
     {
@@ -53,7 +55,7 @@ int main()
 
     
     println("开始播放");
-    STAType result = render->playAsync(&reader);
+    STAType result = render->playAsync(reader.get());
 
     result = render->waitPlayDone();
     return 0;

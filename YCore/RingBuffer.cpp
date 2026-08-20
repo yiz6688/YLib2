@@ -92,9 +92,6 @@ int RingBuffer::read(char* buffer, int offset, int size)
 	if (readableBytes > size)
 	{
 		readableBytes = size;  //修正可读数量
-	}else
-	{
-		rpos += (this->_capacity - this->_cap_aligned); //修正位置
 	}
 
 
@@ -102,7 +99,11 @@ int RingBuffer::read(char* buffer, int offset, int size)
 	if (size1 > readableBytes)
 	{
 		size1 = readableBytes;
+	}else
+	{
+		rpos += (this->_capacity - this->_cap_aligned); //修正位置
 	}
+
 	std::copy_n(this->_ptr + readPos, size1, buffer + offset);
 
 	auto size2 = readableBytes - size1;
@@ -151,16 +152,17 @@ int RingBuffer::write(const char* data, int offset, int size)
 	if (writeableBytes > size)
 	{
 		writeableBytes = size;
-	}else
-	{
-		wpos += (this->_capacity - this->_cap_aligned);
 	}
 
 	auto size1 = this->_cap_aligned - writePos;  //读指针到尾部的空间
 	if (size1 > writeableBytes)
 	{
 		size1 = writeableBytes;
+	}else
+	{
+		wpos += (this->_capacity - this->_cap_aligned);
 	}
+	
 	std::copy_n(data + offset, size1, this->_ptr + writePos);
 
 	auto size2 = writeableBytes - size1;
@@ -294,7 +296,7 @@ std::span<char> RingBuffer::getReadBuffer(TYPE1 size)
 	auto readPos = rpos & this->_mask;  //相当于求余
 	auto rptr = this->_ptr + readPos;  //写指针起始位置。
 
-	if(size == 0 || this->read_lock_len == 0)
+	if(size == 0 || this->read_lock_len != 0)
 	{
 		return std::span<char>(rptr, 0);
 	}

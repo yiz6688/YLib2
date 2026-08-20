@@ -210,8 +210,8 @@ WaveReader::WaveReader(Stream* stream)
 	}
 }
 
-WaveReader::WaveReader(const std::string & filePath)
-	:_ptr{ new FileStream(filePath, FileMode::Open, FileAccess::Read) }, _stream(_ptr.get())
+WaveReader::WaveReader(std::unique_ptr<Stream>&& stream)
+	:_ptr{ std::move(stream) }, _stream(_ptr.get())
 	, _dataPos{ 0 }, _dataSize{ 0 }
 {
 
@@ -516,4 +516,25 @@ std::expected<void, std::string> WaveReader::readWaveHeader()
 	CHECK_RESULT(result);
 
 	return {};
+}
+
+TPResult<WaveReader> WaveReader::create(std::string_view filepath)
+{
+    auto fsResult = FileStream::create(filepath, FileMode::Open, FileAccess::Read);
+	if(!fsResult)
+	{
+		return make_err<WaveReader>(fsResult.error());
+	}
+
+	TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(std::move(fsResult.value())));
+
+	return ptr;
+
+}
+
+TPResult<WaveReader> WaveReader::create(Stream *stream)
+{
+    TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(stream));
+	
+    return ptr;
 }

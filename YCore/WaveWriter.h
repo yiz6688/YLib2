@@ -9,11 +9,12 @@ class WaveWriter
 {
 
 
-public:
+private:
 	WaveWriter(const WaveFormat& _waveFormat, Stream* stream);
 
-	WaveWriter(const WaveFormat& _waveFormat, const std::string& filePath);
+	WaveWriter(const WaveFormat& _waveFormat, TPtr<Stream>&& stream);
 
+public:	
 	virtual ~WaveWriter();
 
 public:
@@ -73,6 +74,11 @@ protected:
 	
 
 	virtual std::expected<void, std::string> updateHeader();
+
+public:
+	static TPResult<WaveWriter> create(const WaveFormat& _waveFormat, std::string_view filepath);
+
+	static TPResult<WaveWriter> create(const WaveFormat& _waveFormat, Stream* stream);
 
 protected:
 	

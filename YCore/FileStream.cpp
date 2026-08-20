@@ -20,10 +20,10 @@ FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileA
 	this->_writeable = true;
 	this->_seekable = true;
 
-	if (filepath.empty())
-	{
-		//throw invalid_argument("文件字符串不能为空");
-	}
+	// if (filepath.empty())
+	// {
+	// 	//throw invalid_argument("文件字符串不能为空");
+	// }
 
 	this->_buffer = make_unique<char[]>(this->_capacity);
 	this->_writePos = 0;
@@ -32,12 +32,12 @@ FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileA
 	SetErrorMode(1); //系统不弹窗，将错误发送给调用进程
 
 
-	auto result = this->init();
-	if (!result)
-	{
-		println("{}", result.error());
-		throw runtime_error(result.error());
-	}
+	// auto result = this->init();
+	// if (!result)
+	// {
+	// 	println("{}", result.error());
+	// 	throw runtime_error(result.error());
+	// }
 }
 
 FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess)

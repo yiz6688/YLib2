@@ -1,37 +1,53 @@
+#pragma once
 #include<cstdint>
 #include<cmath>
 #include<string>
 
+enum class Endian{Big, Little};
+
+template<Endian E = Endian::Little>
 struct Int24
 {
-    Int24( int val)
+    Int24()
     {
-        _buf[0] = (val >> 16) & 0xFF;
-        _buf[1] = (val >> 8) & 0xFF;
-        _buf[2] = (val & 0xFF);
+
     }
 
-    Int24 operator+(int val)
+    Int24( int val)
     {
-        int v2 = *this;
-        int v3 = v2 = val;
-        return Int24(v3);
+        if constexpr(E == Endian::Big)
+        {
+            _buf[0] = (val >> 16) & 0xFF;
+            _buf[1] = (val >> 8) & 0xFF;
+            _buf[2] = (val & 0xFF);
+        }else
+        {
+            _buf[2] = (val >> 16) & 0xFF;
+            _buf[1] = (val >> 8) & 0xFF;
+            _buf[0] = (val & 0xFF);
+        }
+
     }
+
 
     operator int()
     {
-        int val = (_buf[0] & 0xFF) << 16 | (_buf[1] & 0xFF) << 8 |(_buf[2] & 0xFF);
+        int val = 0;
+        if constexpr(E == Endian::Big)
+        {
+            val = (_buf[0] & 0xFF) << 16 | (_buf[1] & 0xFF) << 8 |(_buf[2] & 0xFF);
+        }else
+        {
+            val = (_buf[2] & 0xFF) << 16 | (_buf[1] & 0xFF) << 8 |(_buf[0] & 0xFF);
+        }
+
+        if(val & 0x800000)
+        {
+            val &= 0xFF800000;  //负数
+        }
+
+        
         return val;
-    }
-
-    operator float()
-    {
-        return this->operator int();
-    }
-
-    operator double()
-    {
-        return this->operator int();
     }
 
 
@@ -39,7 +55,7 @@ private:
     char _buf[3];
 };
 
-
+using int24 = Int24<>;
 
 struct FixDecimal
 {

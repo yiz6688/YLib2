@@ -26,26 +26,30 @@ int waveReadWriteTest()
 
 	std::string fullPath = path + fileName;
 	std::string out_fullPath = out_path + out_fileName;
-	WaveReader reader(fullPath);
-	auto& fmt = reader.getWaveFormat();
+	//WaveReader reader(fullPath);
+	auto readerResult = WaveReader::create(fullPath);
+	auto& reader = readerResult.value();
+
+	auto& fmt = reader->getWaveFormat();
 	println("{}", fmt.toString());
-	println("wav长度: {}, 帧数: {}", reader.getLength(), reader.getFrameCount());
+	println("wav长度: {}, 帧数: {}", reader->getLength(), reader->getFrameCount());
 
 
-	WaveWriter writer(fmt, out_fullPath);
-
+	//WaveWriter writer(fmt, out_fullPath);
+	auto writerResult = WaveWriter::create(fmt, out_fullPath);
+	auto& writer = writerResult.value();
 
 	char buffer[4096];
 
 	while (true)
 	{
-		auto nread = reader.read(buffer, 4096);
+		auto nread = reader->read(buffer, 4096);
 		int num = nread.value();
 		if (num <= 0)
 		{
 			break;
 		}
-		auto result = writer.write(buffer, num);
+		auto result = writer->write(buffer, num);
 		if (!result)
 		{
 			println("写入失败: {}", result.error());
@@ -67,17 +71,23 @@ void createSineTest()
 	int nSamples = fmt.getSampleRate() * mills / 1000;
 
 	std::vector<float> samples(nSamples);
-	WaveWriter writer1(fmt, R"(D:\wave\out\sine1.wav)");
+	//WaveWriter writer1(fmt, R"(D:\wave\out\sine1.wav)");
+	auto writerResult = WaveWriter::create(fmt, R"(D:\wave\out\sine1.wav)");
+	auto& writer1 = writerResult.value();
+
 	for(int i=0; i<nSamples; i++)
 	{
 		double t = static_cast<double>(i) / fmt.getSampleRate(); //当前的时间点
 		double sampleValue = amplitude * sin(2.0 * numbers::pi * freq * t);
 		samples[i] = static_cast<float>(sampleValue);
-		auto result = writer1.writeSample(samples[i]);
+		auto result = writer1->writeSample(samples[i]);
 	}
 
-	WaveWriter writer2(fmt, R"(D:\wave\out\sine2.wav)");
-	auto result = writer2.writeSamples(samples.data(), nSamples);
+	//WaveWriter writer2(fmt, R"(D:\wave\out\sine2.wav)");
+	auto writerResult2 = WaveWriter::create(fmt, R"(D:\wave\out\sine2.wav)");
+	auto& writer2 = writerResult2.value();
+
+	auto result = writer2->writeSamples(samples.data(), nSamples);
 	if (!result)
 	{
 		println("写入失败: {}", result.error());
@@ -279,8 +289,12 @@ int WaveRingTest()
 
 
 		WaveFormat i16Fmt(sampleRate, 16, 1);
-		WaveWriter i16Writer(i16Fmt, path);
-		auto result = i16Writer.write(i16Data.data(), i16Data.size());
+		//WaveWriter i16Writer(i16Fmt, path);
+		auto writerResult3 = WaveWriter::create(i16Fmt, path);
+		auto& i16Writer = writerResult3.value();
+
+
+		auto result = i16Writer->write(i16Data.data(), i16Data.size());
 		if (result)
 		{
 			println("{} 写入成功:{}", path, result.value());
@@ -301,8 +315,11 @@ int WaveRingTest()
 
 
 		WaveFormat i24Fmt(sampleRate, 24, 1);
-		WaveWriter i24Writer(i24Fmt, path);
-		result = i24Writer.write(i24Data.data(), i24Data.size());
+		//WaveWriter i24Writer(i24Fmt, path);
+		auto writerResult4 = WaveWriter::create(i24Fmt, path);
+		auto& i24Writer = writerResult4.value();
+
+		result = i24Writer->write(i24Data.data(), i24Data.size());
 		if (result)
 		{
 			println("{} 写入成功:{}", path, result.value());
@@ -324,8 +341,11 @@ int WaveRingTest()
 
 
 		WaveFormat i32Fmt(sampleRate, 32, 1);
-		WaveWriter i32Writer(i32Fmt, path);
-		result = i32Writer.write(i32Data.data(), i32Data.size());
+		//WaveWriter i32Writer(i32Fmt, path);
+		auto writerResult5 = WaveWriter::create(i32Fmt, path);
+		auto& i32Writer = writerResult5.value();
+
+		result = i32Writer->write(i32Data.data(), i32Data.size());
 		if (result)
 		{
 			println("{} 写入成功:{}", path, result.value());
@@ -345,8 +365,12 @@ int WaveRingTest()
 		println("{} 读取的数量:{}", path, readSample);
 
 		auto floatFmt = WaveFormat::createFloatWaveFormat(sampleRate, 1);
-		WaveWriter floatWriter(floatFmt, path);
-		result = floatWriter.write(f32Data.data(), f32Data.size());
+		//WaveWriter floatWriter(floatFmt, path);
+		auto writerResult6 = WaveWriter::create(floatFmt, path);
+		auto& floatWriter = writerResult6.value();
+
+
+		result = floatWriter->write(f32Data.data(), f32Data.size());
 		if (result)
 		{
 			println("{} 写入成功:{}", path, result.value());

@@ -58,7 +58,7 @@ enum class FileShare
 
 class FileStream final: public Stream
 {
-public:
+private:
 
 	FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize);
 

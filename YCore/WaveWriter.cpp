@@ -18,9 +18,9 @@ WaveWriter::WaveWriter(const WaveFormat& _waveFormat, Stream* stream)
 
 }
 
-WaveWriter::WaveWriter(const WaveFormat& _waveFormat, const std::string& filePath)
-	:_ptr{new FileStream(filePath, FileMode::Create, FileAccess::Write)},
-	_stream{ _ptr.get() }, _dataSize{ 0 }, _fmt{ _waveFormat.clone() }
+WaveWriter::WaveWriter(const WaveFormat& _waveFormat, TPtr<Stream>&& stream)
+	:_ptr{ std::move(stream) }, _stream{ _ptr.get() }, 
+	_dataSize{ 0 }, _fmt{ _waveFormat.clone() }
 {
 	auto result = this->writeWaveHeader();
 	if (!result)
@@ -305,4 +305,24 @@ std::expected<void, std::string> WaveWriter::updateHeader()
 	//恢复原来的位置
 	auto ret = this->setPosition(position.value()); CHECK_RESULT(ret);
 	return {};
+}
+
+TPResult<WaveWriter> WaveWriter::create(const WaveFormat &_waveFormat, std::string_view filepath)
+{
+    auto fsResult = FileStream::create(filepath, FileMode::Create, FileAccess::Write);
+	if(!fsResult)
+	{
+		return make_err<WaveWriter>(fsResult.error());
+	}
+
+	TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(_waveFormat, std::move(fsResult.value())));
+
+	return ptr;
+}
+
+TPResult<WaveWriter> WaveWriter::create(const WaveFormat &_waveFormat, Stream *stream)
+{
+    TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(_waveFormat, stream));
+	
+    return ptr;
 }

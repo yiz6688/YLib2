@@ -56,10 +56,12 @@ void sweepTest2()
 {
     StepSweep step;
 
-    WaveReader reader(R"(D:\wave\testWave\\SPK\\8.wav)");
-    int num = reader.getFrameCount();
+    //WaveReader reader(R"(D:\wave\testWave\\SPK\\8.wav)");
+    auto readerResult = WaveReader::create(R"(D:\wave\testWave\\SPK\\8.wav)");
+    auto& reader = readerResult.value();
+    int num = reader->getFrameCount();
     std::vector<double> data(num);
-    auto res = reader.readSamples64(data.data(), num);
+    auto res = reader->readSamples64(data.data(), num);
     if(!res)
     {
         std::println("读取文件失败:{}", res.error());

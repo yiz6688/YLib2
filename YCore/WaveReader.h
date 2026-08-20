@@ -17,12 +17,12 @@ struct RIFFChunk
 class WaveReader
 {
 
-public:
+private:
 	 
 	WaveReader(Stream* stream);
 
-	WaveReader(const std::string& filePath);
-
+	WaveReader(std::unique_ptr<Stream>&& stream);
+public:
 	virtual ~WaveReader();
 
 
@@ -72,6 +72,12 @@ public:
 private:
 
 	std::expected<void, std::string> readWaveHeader();
+
+
+public:
+	static TPResult<WaveReader> create(std::string_view filepath);
+
+	static TPResult<WaveReader> create(Stream* stream);
 
 
 private:
