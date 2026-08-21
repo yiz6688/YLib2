@@ -259,12 +259,13 @@ STAType WASAPICapture::readNextPacket()
 			long mills = this->waveWriter->getTotalMills();
 			long mills2 = this->recordMills - mills;
 			long bytesWriteable = this->waveFormat.mills2Bytes(mills2);
+			std::expected<long, std::string> writeResult;
 			if(bytesWriteable > bytesAvailable)
 			{
-				this->waveWriter->write((char*)pData, bytesAvailable);
+				writeResult = this->waveWriter->write((char*)pData, bytesAvailable);
 			}else
 			{
-				this->waveWriter->write((char*)pData, bytesWriteable);
+				writeResult = this->waveWriter->write((char*)pData, bytesWriteable);
 				this->captureState = CaptureState::Stopping;
 			}
 			

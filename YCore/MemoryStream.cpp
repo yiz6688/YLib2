@@ -10,6 +10,8 @@ MemoryStream::MemoryStream()
 MemoryStream::MemoryStream(int size)
 	:_capacity{ size }, _length{ 0 }, _origin{ 0 }, _expandable{ true }
 {
+	this->_writeable = true;
+	this->_readable = true;
 	//size = nextpow2(size);
 	this->_buffer = std::make_unique<char[]>(size);
 	this->_ptr = this->_buffer.get();
@@ -18,7 +20,8 @@ MemoryStream::MemoryStream(int size)
 MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool visiable = false)
 	:_buffer{nullptr}, _ptr{data},_capacity{ dataLen }, _length{ dataLen }, _origin{ offset }, _expandable{ visiable }
 {
-
+	this->_writeable = true;
+	this->_readable = true;
 }
 
 MemoryStream::~MemoryStream()
@@ -259,10 +262,7 @@ bool MemoryStream::ensureCapacity(long value)
 		{
 			num = ((value > 2147483591) ? value : 2147483591);
 		}
-		else
-		{
-			return false;
-		}
+		
 		auto result = this->setCapacity(num);
 		return result.operator bool();
 	}

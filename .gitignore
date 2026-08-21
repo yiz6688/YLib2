@@ -2,4 +2,6 @@
 #忽略build目录
 build/
 
+*.rar
+
 compile_commands.json

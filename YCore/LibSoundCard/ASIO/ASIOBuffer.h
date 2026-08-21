@@ -9,9 +9,8 @@ struct ASIOBuffer
  
 public:
     ASIOBuffer(int _channel, SampleType _sampleType, int deviceBufferSize, int ringBufferSize)
-        :sampleType(_sampleType)
+        :channel{_channel}, sampleType(_sampleType)
     {
-        this->channel = _channel;
         this->bitDepth = 4;
         if (this->sampleType == SampleType::INT16)
         {
@@ -62,5 +61,5 @@ public:
 
     std::unique_ptr<RingBuffer> pRingBuffer;
 
-    void* buffers[2];
+    void* buffers[2] {nullptr, nullptr};
 };

@@ -99,9 +99,9 @@ static ASIOChannel toChannel(ASIOChannelInfo info)
 //单例模式
 //对象创建时，iasio实例同步创建，整个生命周期中只会失效，不会为null
 ASIODevice::ASIODevice(ASIOCallbacks* _callbacks, CLSID clsid)
-	: callbacks(_callbacks),driverID(clsid),
-	bufferMinSize(0), bufferMaxSize(0), bufferPreferredSize(0),
-	bufferSize(512), iasio(nullptr), num_of_capture(0), bufferReady(false)
+	: bufferReady(false), bufferSize(512), iasio(nullptr), driverName{},
+	num_of_capture{0}, num_of_render{0}, bufferMinSize(0), bufferMaxSize(0), 
+	bufferPreferredSize(0), callbacks(_callbacks),driverID(clsid)
 {
 }
 
@@ -111,7 +111,7 @@ ASIODevice::~ASIODevice()
 {
 	println("ASIODevice析构");
 
-	this->deviceRelease();
+	auto result = this->deviceRelease();
 
 }
 
@@ -130,7 +130,7 @@ std::expected<void, std::string> ASIODevice::loadInstance()
 		result = this->getSampleRate();
 		if (!result)
 		{
-			this->deviceRelease(); //释放驱动
+			result = this->deviceRelease(); //释放驱动
 		}		
 	}
 
@@ -314,16 +314,17 @@ std::expected<void, std::string> ASIODevice::deviceInit()
 
 std::expected<void, std::string> ASIODevice::deviceRelease()
 {
+	ASIOError error;
 	if (this->iasio != nullptr)
 	{
-		this->stop(); // 调用一次停止
+		auto result = this->stop(); // 调用一次停止
 
 		if (this->bufferReady)
 		{
-			this->iasio->disposeBuffers();  //释放缓冲区
+			error = this->iasio->disposeBuffers();  //释放缓冲区
 			this->bufferReady = false;
 		}
-		this->iasio->Release();
+		error = this->iasio->Release();
 	}
 	return {};
 }
@@ -475,10 +476,10 @@ std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
 	}
 
 	//重新加载驱动,然后创建缓冲区
-	this->loadInstance();
-	this->createBuffer();
+	result = this->loadInstance();
+	result = this->createBuffer();
 	
-
+	return {};
 }
 
 std::expected<void, std::string> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask)

@@ -54,8 +54,8 @@ int ASIOClient::getSampleRate()
     return 0;
 }
 
-TResult<void> ASIOClient::setSampleRate(int sampleRate)
+TResult<void> ASIOClient::setSampleRate(long sampleRate)
 {
-    this->pDriver->pAsioDevice->setSampleRate(sampleRate);
-    return TResult<void>();
+    return this->pDriver->pAsioDevice->setSampleRate(sampleRate);
+    //return TResult<void>();
 }

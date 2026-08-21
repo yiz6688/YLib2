@@ -39,7 +39,7 @@ public:
 	//获取采样率
 	int getSampleRate();
 	//设置采样率
-	TResult<void> setSampleRate(int sampleRate);
+	TResult<void> setSampleRate(long sampleRate);
 
 
 public:

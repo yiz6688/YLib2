@@ -5,7 +5,23 @@
 #include<vector>
 #include<iostream>
 #include"myType.h"
+#include"FileStream.h"
 using namespace std;
+
+
+
+void fileTest()
+{
+    
+
+
+
+}
+
+
+
+
+
 
 int main()
 {

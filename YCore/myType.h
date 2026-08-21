@@ -43,7 +43,7 @@ struct Int24
 
         if(val & 0x800000)
         {
-            val &= 0xFF800000;  //负数
+            val |= 0xFF800000;  //负数
         }
 
         
