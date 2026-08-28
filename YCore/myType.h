@@ -8,12 +8,13 @@ enum class Endian{Big, Little};
 template<Endian E = Endian::Little>
 struct Int24
 {
-    Int24()
+    constexpr Int24()
+        :_buf{}
     {
-
+        
     }
 
-    Int24( int val)
+    constexpr Int24( int val)
     {
         if constexpr(E == Endian::Big)
         {
@@ -30,7 +31,7 @@ struct Int24
     }
 
 
-    operator int()
+    constexpr operator int() const
     {
         int val = 0;
         if constexpr(E == Endian::Big)
@@ -56,6 +57,43 @@ private:
 };
 
 using int24 = Int24<>;
+
+namespace std {
+    template <>
+    class numeric_limits<int24> {
+    public:
+        // 表明该类型已经被特化
+        static constexpr bool is_specialized = true; 
+        
+        // 表明这是一个有符号整数类型
+        static constexpr bool is_signed = true;      
+        static constexpr bool is_integer = true;     
+        static constexpr bool is_exact = true;       
+        static constexpr int radix = 2;              
+        
+        // 24位整数，其中1位是符号位，所以有23个值位
+        static constexpr int digits = 23;            
+        // 24位有符号整数能表示的十进制有效位数
+        static constexpr int digits10 = 7;           
+
+        // 返回最小值 (-2^23)
+        static constexpr int24 (min)() noexcept { 
+            return int24(-8388608); 
+        }
+        
+        // 返回最大值 (2^23 - 1)
+        static constexpr int24 (max)() noexcept { 
+            return int24(8388607); 
+        }
+        
+        // C++11 引入，返回最低有限值（对于整数，与 min() 相同）
+        static constexpr int24 lowest() noexcept { 
+            return min(); 
+        }
+    };
+} // namespace std
+
+
 
 struct FixDecimal
 {

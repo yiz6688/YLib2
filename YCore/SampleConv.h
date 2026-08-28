@@ -4,6 +4,14 @@
 #include<random>
 #include"myType.h"
 #define COMPATIBILITY_MODE
+
+
+struct Channel
+{
+	int index = 0;
+	int total = 1;
+};
+
 class SampleConv
 {
 
@@ -34,13 +42,35 @@ public:
 		}
 	}
 
+	template<typename T>
+	static void IntToFloat(T* src, int samplelen, float* dest, int nChannel = 1)
+	{
+		#ifndef COMPATIBILITY_MODE
+			constexpr int q_min = (std::numeric_limits<T>::min)();   //量化为最小值上下对称
+			const float coeff = -1.0f / q_min ;  //用最小值也就是大的值进行转浮点数
+		#else
+			constexpr int q_max = (std::numeric_limits<T>::max)();
+			const float coeff = 1.0f / q_max ;  //用最大值也就是大的值进行转浮点数
+		#endif
+			
+		T* ptr1 = src + samplelen - 1;
+		float* ptr2 = dest + samplelen - 1;
+
+		for (int i = 0; i < samplelen; i+=nChannel)
+		{
+			*ptr2 = (*ptr1) * coeff ;
+			ptr1-=nChannel;
+			ptr2--;
+		}
+	}
+
 	static void IntToFloat(int24* src, int samplelen, float* dest, float scale = 1.0f)
 	{
 		#ifndef COMPATIBILITY_MODE
-			constexpr int q_min = INT24_MIN;   //量化为最小值上下对称
+			constexpr int q_min = (std::numeric_limits<int24>::max)();   //量化为最小值上下对称
 			const float coeff = -1.0f * scale / q_min ;  //用最小值也就是大的值进行转浮点数
 		#else
-			constexpr int q_max = INT24_MAX;
+			constexpr int q_max = (std::numeric_limits<int24>::max)();
 			const float coeff = 1.0f * scale / q_max ;  //用最大值也就是大的值进行转浮点数
 		#endif
 			
@@ -54,6 +84,34 @@ public:
 			ptr2--;
 		}
 	}
+
+	template<typename T>
+	static void IntToFloat(char* src, int samplelen, float*dest)
+	{
+		#ifndef COMPATIBILITY_MODE
+			constexpr int q_min = (std::numeric_limits<T>::min)();   //量化为最小值上下对称
+			const float coeff = -1.0f / q_min ;  //用最小值也就是大的值进行转浮点数
+		#else
+			constexpr int q_max = (std::numeric_limits<T>::max)();
+			const float coeff = 1.0f / q_max ;  //用最大值也就是大的值进行转浮点数
+		#endif
+			
+		char* ptr1 = src + samplelen * sizeof(T) - 1;
+		float* ptr2 = dest + samplelen - 1;
+
+		for (int i = 0; i < samplelen; i++)
+		{
+			T value = 0;
+			for(int k = 0; k < sizeof(T); k++)
+			{
+				value = (value << 8) | (*ptr1 & 0xFF);
+				ptr1--;
+			}
+			*ptr2 = value * coeff ;
+			ptr2--;
+		}
+	}
+
 
 	template<typename T>
 	static void IntToDouble(T* src, int samplelen, double* dest, double scale = 1.0)
@@ -279,7 +337,7 @@ public:
 	//16位整数转float
 	static void Int16toFloat(short* src, int samplelen, float* dest)
 	{
-		IntToFloat(src, samplelen, dest);
+		IntToFloat(src, samplelen, dest, 1.0f);
 	}
 	//传入采样点长度
 	//24位整数转float
@@ -310,7 +368,7 @@ public:
 	//32位整数转float
 	void static Int32toFloat(int* src, int samplelen, float* dest)
 	{
-		IntToFloat(src, samplelen, dest);
+		IntToFloat(src, samplelen, dest, 1.0f);
 	}
 
 	//float转16位整数
