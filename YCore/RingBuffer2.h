@@ -301,8 +301,7 @@ public:
 
         //这里必定不会产生回绕
         auto wpos = this->write_pos.load(std::memory_order_relaxed);
-
-        auto rpos = this->read_pos.load(std::memory_order_acquire);
+        //auto rpos = this->read_pos.load(std::memory_order_acquire);
 
         auto releaseSize = this->write_lock_len > size ? size : this->write_lock_len;
 
@@ -361,12 +360,12 @@ public:
         if(size == 0 || this->read_lock_len == 0)
         {
             return 0;
-        }else if(this->read_lock_len == std::numeric_limits<TYPE1>::max())
+        }else if(size == std::numeric_limits<TYPE1>::max())
         {
             size = this->read_lock_len;
         }
         //这里必定不会产生回绕
-        auto wpos = this->write_pos.load(std::memory_order_acquire);
+        //auto wpos = this->write_pos.load(std::memory_order_acquire);
         auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
         auto releaseSize = this->read_lock_len > size ? size : this->read_lock_len;

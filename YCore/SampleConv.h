@@ -15,10 +15,6 @@ struct Channel
 class SampleConv
 {
 
-private:
-	static constexpr int INT24_MAX = 8388607;
-	static constexpr int INT24_MIN = -8388608;
-
 public:
 	template<typename T>
 	static void IntToFloat(T* src, int samplelen, float* dest, float scale = 1.0f)
@@ -138,10 +134,10 @@ public:
 	static void IntToFloat(int24* src, int samplelen, double* dest, double scale = 1.0f)
 	{
 		#ifndef COMPATIBILITY_MODE
-			constexpr int q_min = INT24_MIN;   //量化为最小值上下对称
+			constexpr int q_min = (std::numeric_limits<int24>::min)();;   //量化为最小值上下对称
 			const float coeff = -1.0f * scale / q_min ;  //用最小值也就是大的值进行转浮点数
 		#else
-			constexpr int q_max = INT24_MAX;
+			constexpr int q_max = (std::numeric_limits<int24>::max)();
 			const float coeff = 1.0f * scale / q_max ;  //用最大值也就是大的值进行转浮点数
 		#endif
 			
@@ -204,8 +200,8 @@ public:
 
 	static void FloatToInt(float* src, int samplelen, int24* dest, float scale = 1.0f)
 	{
-		constexpr int q_max = INT24_MAX;   //量化为最大值上下对称
-		constexpr int q_min = INT24_MIN;
+		constexpr int q_max = (std::numeric_limits<int24>::max)();;   //量化为最大值上下对称
+		constexpr int q_min = (std::numeric_limits<int24>::min)();;
 		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数,没有歧义
 
 		float* ptr1 = src + samplelen - 1;
@@ -257,8 +253,8 @@ public:
 
 	static void DoubleToInt(double* src, int samplelen, int24* dest, float scale = 1.0f)
 	{
-		constexpr int q_max = INT24_MAX;   //量化为最大值上下对称
-		constexpr int q_min = INT24_MIN;
+		constexpr int q_max = (std::numeric_limits<int24>::max)();   //量化为最大值上下对称
+		constexpr int q_min = (std::numeric_limits<int24>::min)();
 		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数,没有歧义
 
 		double* ptr1 = src + samplelen - 1;
@@ -284,8 +280,8 @@ public:
 
 	static void FloatToInt24(float* src, int samplelen, int* dest, float scale = 1.0f)
 	{
-		const int q_max = 8388607;   //量化为最大值上下对称
-		const int q_min = -8388608;
+		const int q_max = (std::numeric_limits<int24>::max)();;   //量化为最大值上下对称
+		const int q_min = (std::numeric_limits<int24>::min)();;
 		const int coeff = q_max;  //用最大值也就是大的值进行转浮点数
 		float* ptr1 = src + samplelen - 1;
 		int* ptr2 = dest + samplelen - 1;

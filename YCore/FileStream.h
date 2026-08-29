@@ -132,7 +132,7 @@ private:
 	void* _hFile;
 	std::unique_ptr<char[]> _buffer;
 	int _capacity;
-	long _appendStart;  //追加模式下，不允许修改已经存在的内容，这里记录的是原始位置。
+	long _appendStart { -1 };  //追加模式下，不允许修改已经存在的内容，这里记录的是原始位置。
 	int _readPos{ 0 };
 	int _readLen{ 0 };
 	int _writePos{ 0 };

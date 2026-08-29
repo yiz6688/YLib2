@@ -4,6 +4,7 @@
 #include<iostream>
 #include"Encoding.h"
 #include"WinUtils.h"
+#include<cstring>
 #include<print>
 
 using namespace std;
@@ -118,6 +119,12 @@ std::expected<void, std::string> FileStream::setLength(long value)
 		return std::unexpected("文件未打开!!");
 	}
 
+	if(value < 0)
+	{
+		return std::unexpected("value不能小于0");
+	}
+
+
 	if (this->_writePos > 0)
 	{
 		auto result = this->flushWrite();
@@ -205,7 +212,7 @@ std::expected<long, std::string> FileStream::getLength()
 	auto result = GetFileSizeEx(this->_hFile, &size);
 	if (result == FALSE)
 	{
-		throw invalid_argument("GetFileSizeEx");
+		return std::unexpected(WinUtils::getError("GetFileSizeEx"));
 	}
 
 	long length = this->_writePos + this->_position;
@@ -265,7 +272,7 @@ std::expected<void, std::string> FileStream::setPosition(long value)
 
 std::expected<void, std::string> FileStream::flush()
 {
-	return this->flush(false);
+	return this->flush(true);
 }
 
 std::expected<void, std::string> FileStream::flush(bool flushToDisk)
@@ -293,10 +300,13 @@ std::expected<void, std::string> FileStream::flush(bool flushToDisk)
 
 	if (flushToDisk)
 	{
-		auto ret = FlushFileBuffers(this->_hFile);
-		if (ret == FALSE)
+		if(this->_writeable)
 		{
-			return std::unexpected(WinUtils::getError("FlushFileBuffers"));
+			auto ret = FlushFileBuffers(this->_hFile);
+			if (ret == FALSE)
+			{
+				return std::unexpected(WinUtils::getError("FlushFileBuffers"));
+			}
 		}
 	}
 
@@ -346,7 +356,7 @@ std::expected<long, std::string> FileStream::seek(long offset, SeekOrigin origin
 		num2 = result.value();  //调整后的实际位置
 	}
 
-	if (this->_appendStart != -1 && num < this->_appendStart)
+	if (this->_appendStart != -1 && num2 < this->_appendStart)
 	{
 		auto result = this->seekCore(num, SeekOrigin::Begin);   //修正到实际位置。
 		if (!result)
@@ -361,9 +371,11 @@ std::expected<long, std::string> FileStream::seek(long offset, SeekOrigin origin
 		long k = num2 - num;
 		if (k > -this->_readPos && k < this->_readLen - this->_readPos)
 		{
-			std::copy_n(this->_buffer.get() + this->_readPos + k, 
-				this->_readLen - this->_readPos - k,  this->_buffer.get());
-			this->_readLen -= _readPos;
+			// std::copy_n(this->_buffer.get() + this->_readPos + k, 
+			// 	this->_readLen - this->_readPos - k,  this->_buffer.get());
+			std::memmove(this->_buffer.get(), this->_buffer.get() + this->_readPos + k, 
+						this->_readLen - this->_readPos - k);
+			this->_readLen -= _readPos + k;
 			this->_readPos = 0;
 			if (this->_readLen > 0)
 			{
@@ -389,6 +401,11 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{
 		return std::unexpected("文件未打开!!!");
+	}
+
+	if(offset < 0 || size < 0 || offset + count > size)
+	{
+		return std::unexpected("输入参数不合法!!!");
 	}
 
 	if (this->canRead() == false)
@@ -471,6 +488,11 @@ std::expected<long, std::string>  FileStream::basic_write(const char* array, int
 		return std::unexpected("文件未打开!!!");
 	}
 
+	if(offset < 0 || size < 0 || offset + count > size)
+	{
+		return std::unexpected("输入参数不合法!!!");
+	}
+
 	if (this->canWrite() == false)
 	{
 		return std::unexpected("文件不支持写入");
@@ -534,7 +556,7 @@ std::expected<void, std::string> FileStream::flushRead()
 	auto offset = this->_readPos - _readLen;   //读取场景下，没有读完但在缓冲区的内容,恢复文件指针位置
 	if (offset != 0)
 	{
-		auto result = this->seek(offset, SeekOrigin::Current);
+		auto result = this->seekCore(offset, SeekOrigin::Current);
 		if (!result)
 		{
 			return std::unexpected(result.error());

@@ -12,16 +12,19 @@ MemoryStream::MemoryStream(int size)
 {
 	this->_writeable = true;
 	this->_readable = true;
+	this->_seekable = true;
 	//size = nextpow2(size);
 	this->_buffer = std::make_unique<char[]>(size);
 	this->_ptr = this->_buffer.get();
 }
 
 MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool visiable = false)
-	:_buffer{nullptr}, _ptr{data},_capacity{ dataLen }, _length{ dataLen }, _origin{ offset }, _expandable{ visiable }
+	:_buffer{nullptr}, _ptr{data},_capacity{ dataLen }, _length{ offset + count }, _origin{ offset }, _expandable{ visiable }
 {
 	this->_writeable = true;
 	this->_readable = true;
+	this->_seekable = true;
+
 }
 
 MemoryStream::~MemoryStream()
@@ -51,7 +54,7 @@ std::expected<void, std::string> MemoryStream::setPosition(long value)
 		return std::unexpected("设置值必须是正数");
 	}
 
-	this->_position += value;
+	this->_position = this->_origin + value;
 	return {};
 }
 
@@ -133,7 +136,7 @@ std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin orig
 	{
 		return std::unexpected("origin参数不合法");
 	}
-	return this->_position;
+	return this->_position - this->_origin;
 }
 
 std::expected<void, std::string> MemoryStream::close()
@@ -148,9 +151,9 @@ std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size
 		return std::unexpected("不支持读取");
 	}
 
-	if (offset + count > size)
+	if (offset < 0 || size < 0 || offset + count > size)
 	{
-		throw std::invalid_argument("传递参数不合法");
+		return std::unexpected("输入参数不合法");
 	}
 	//剩余空间
 	int num = this->_length - this->_position;
@@ -187,9 +190,9 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 		return std::unexpected("不支持写入");
 	}
 
-	if (offset + count > size)
+	if (offset < 0 || size < 0 || offset + count > size)
 	{
-		return std::unexpected("传递参数不合法");
+		return std::unexpected("输入参数不合法");
 	}
 
 	int num = this->_position + count;

@@ -31,10 +31,8 @@ int WaveBuffer::readSample(WaveMix &mix, int sampleNum)
     {
         return 0;
     }
-    int rdSamples = 0;  //读取的采样点数;
+
     int rdFrames = 0;  //读取的帧数
-
-
     while(true)
     {
         auto byteSize = (sampleNum - rdFrames) * this->_frameSize;
@@ -45,16 +43,21 @@ int WaveBuffer::readSample(WaveMix &mix, int sampleNum)
         }
 
         int nFrames = buf.size() / this->_frameSize;  //读取的帧数
-
         auto& samples = mix._datas;
 
         for(auto& sample : samples)
         {
             auto src = buf.data();  //起始指针位置
-            auto dest = sample.pf + rdFrames;
-            this->toFloat32(src, dest, nFrames, sample._chnInx);
+            if(mix._type == SampleType::IEEE32)
+            {
+                auto dest = sample.pf + rdFrames;
+                this->toFloat32(src, dest, nFrames, sample._chnInx);
+            }else
+            {
+                auto dest = sample.pd + rdFrames;
+                this->toFloat32(src, dest, nFrames, sample._chnInx);
+            }
         }
-
         rdFrames += nFrames; //计算已读帧数
         this->_pRing->releaseReadBuffer();
     }
@@ -68,32 +71,35 @@ int WaveBuffer::writeSample(WaveMix &mix, int sampleNum)
     {
         return 0;
     }
-    int rdSamples = 0;  //读取的采样点数;
+
     int rdFrames = 0;  //读取的帧数
-
-
     while(true)
     {
         auto byteSize = (sampleNum - rdFrames) * this->_frameSize;
-        auto buf = this->_pRing->getReadBuffer(byteSize);
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
         if(buf.size() == 0)
         {
             break;
         }
 
         int nFrames = buf.size() / this->_frameSize;  //读取的帧数
-
         auto& samples = mix._datas;
 
         for(auto& sample : samples)
         {
-            auto src = sample.pf + rdFrames;
             auto dest = buf.data();  //起始指针位置
-            this->fromFloat32(src, dest, nFrames, sample._chnInx);
+            if(this->_type == SampleType::IEEE32)
+            {
+                auto src = sample.pf + rdFrames;
+                this->fromFloat32(src, dest, nFrames, sample._chnInx);
+            }else
+            {
+                auto src = sample.pd + rdFrames;
+                this->fromFloat32(src, dest, nFrames, sample._chnInx);
+            }
         }
-
         rdFrames += nFrames; //计算已读帧数
-        this->_pRing->releaseReadBuffer();
+        this->_pRing->releaseWriteBuffer();
     }
 
     return rdFrames;
@@ -188,11 +194,12 @@ int WaveBuffer::writeRaw(WaveMix &mix, int sampleNum)
 
 int WaveBuffer::writeBytes(char *ptr, int byteSize)
 {
-    return this->_pRing->write(ptr, byteSize);
+    int size = (byteSize / this->_frameSize) * this->_frameSize;
+    return this->_pRing->write(ptr, size);
 }
 
 int WaveBuffer::readBytes(char *ptr, int byteSize)
 {
-    return this->_pRing->read(ptr, byteSize);
+    int size = (byteSize / this->_frameSize) * this->_frameSize;
+    return this->_pRing->read(ptr, size);
 }
-

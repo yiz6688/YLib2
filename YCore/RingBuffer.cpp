@@ -327,7 +327,7 @@ int RingBuffer::releaseReadBuffer(unsigned size)
     if(size == 0 || this->read_lock_len == 0)
 	{
 		return 0;
-	}else if(this->read_lock_len == std::numeric_limits<TYPE1>::max())
+	}else if(size == std::numeric_limits<TYPE1>::max())
 	{
 		size = this->read_lock_len;
 	}

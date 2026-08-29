@@ -3,6 +3,7 @@
 #include"myType.h"
 #include"RingBuffer2.h"
 #include<vector>
+#include<cstring>
 
 
 
@@ -116,12 +117,23 @@ private:
         src = src + chnIndex * this->_byteDepth;  //起始指针位置
         int nFrames = sampleNum;
 
-        if(this->_type == SampleType::IEEE32)
+        if(this->_type == SampleType::IEEE64)
+        {
+            double value = 0.0;
+            for(int i=0; i<nFrames; i++)
+            {
+                std::memcpy(&src, src, 8);
+                *dest = value;
+                src += this->_frameSize; //起始指针
+                dest++;
+            }
+        }
+        else if(this->_type == SampleType::IEEE32)
         {
             float value = 0.0f;
             for(int i=0; i<nFrames; i++)
             {
-                value = (src[0] & 0xFF) | ((src[1] & 0xFF) << 8) | ((src[2] & 0xFF) << 16) | ((src[3] & 0xFF) << 24);
+                std::memcpy(&src, src, 4);
                 *dest = value;
                 src += this->_frameSize; //起始指针
                 dest++;
@@ -173,14 +185,24 @@ private:
         dest = dest + chnIndex * this->_byteDepth;  //起始指针位置
         int nFrames = sampleNum;
 
-        if(this->_type == SampleType::IEEE32)
+        if(this->_type == SampleType::IEEE64)
+        {
+            double value = 0.0f;
+            for(int i=0; i<nFrames; i++)
+            {
+                value = static_cast<float>(src[i]);
+                std::memcpy(dest, &value, 8);
+                src++;
+                dest += this->_frameSize; //起始指针
+            }
+        }
+        else if(this->_type == SampleType::IEEE32)
         {
             float value = 0.0f;
             for(int i=0; i<nFrames; i++)
             {
                 value = static_cast<float>(src[i]);
-                char* ptr = reinterpret_cast<char*>(&value);
-                std::copy_n(ptr, 4, dest);
+                std::memcpy(dest, &value, 4);
                 src++;
                 dest += this->_frameSize; //起始指针
             }
@@ -190,30 +212,27 @@ private:
             for(int i=0; i<nFrames; i++)
             {
                 value = static_cast<int>(std::round(*src *(std::numeric_limits<int>::max)()));
-                char* ptr = reinterpret_cast<char*>(&value);
-                std::copy_n(ptr, 4, dest);
+                std::memcpy(dest, &value, 4);
                 src++;
                 dest += this->_frameSize; //起始指针
             }
         }else if(this->_type == SampleType::INT24)
         {
-            int value = 0;
+            int24 value = 0;
             for(int i=0; i<nFrames; i++)
             {
                 value = static_cast<int>(std::round(*src *(std::numeric_limits<int24>::max)()));
-                char* ptr = reinterpret_cast<char*>(&value);
-                std::copy_n(ptr, 3, dest);
+                std::memcpy(dest, &value, 3);
                 src++;
                 dest += this->_frameSize; //起始指针
             }
         }else if(this->_type == SampleType::INT16)
         {
-            int value = 0;
+            short value = 0;
             for(int i=0; i<nFrames; i++)
             {
                 value = static_cast<int>(std::round(*src *(std::numeric_limits<short>::max)()));
-                char* ptr = reinterpret_cast<char*>(&value);
-                std::copy_n(ptr, 2, dest);
+                std::memcpy(dest, &value, 2);
                 src++;
                 dest += this->_frameSize; //起始指针
             }
@@ -226,7 +245,6 @@ private:
 
 private:
 
-    
     SampleType _type; //类型
 	int _byteDepth;    //采样位宽
     int _chnNum;       //通道数
