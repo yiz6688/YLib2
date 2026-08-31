@@ -147,9 +147,11 @@ std::expected<void, std::string> ASIODevice::loadInstance()
 	auto initResult = this->iasio->init(handle);
 	if (initResult != ASIOTrue)  //驱动初始化
 	{
+		char err[256];
+		this->iasio->getErrorMessage(err);
 		this->iasio->Release();  //释放驱动
 		this->iasio = nullptr;
-		return std::unexpected("asio init Fail!");
+		return std::unexpected(std::format("asio init Fail,err={}", err));
 	}
 
 	return {};

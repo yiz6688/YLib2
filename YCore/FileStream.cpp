@@ -15,7 +15,7 @@ constexpr int defaultBufferSize = 4096;  //默认设置为4k
 
 FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess, FileShare fileShare, int bufferSize)
 	: _filepath{filepath}, _fileMode{fileMode}, _fileAccess{fileAccess}, _fileShare{fileShare},
-	 _hFile(INVALID_HANDLE_VALUE), _capacity(bufferSize < 0 ? defaultBufferSize : bufferSize)
+	 _hFile(INVALID_HANDLE_VALUE), _capacity(bufferSize <= 0 ? defaultBufferSize : bufferSize)
 {
 	this->_readable = true;
 	this->_writeable = true;
@@ -53,15 +53,18 @@ FileStream::FileStream(const string_view filepath, FileMode fileMode)
 {}
 
 FileStream::FileStream(FileStream&& other) noexcept
-	: Stream(std::move(static_cast<Stream&>(other))), _hFile(other._hFile), 
-	_buffer(move(other._buffer)), _capacity(other._capacity),
+	: Stream(std::move(static_cast<Stream&>(other))), _filepath{std::move(other._filepath)},
+	_fileMode(other._fileMode), _fileAccess(other._fileAccess), _fileShare(other._fileShare),
+	 _hFile(other._hFile), _buffer(move(other._buffer)), _capacity(other._capacity), _appendStart{other._appendStart},
 	_readPos(other._readPos), _readLen(other._readLen), _writePos(other._writePos)
+
 {
 	other._hFile = INVALID_HANDLE_VALUE;
 	other._position = 0;
 	other._readable = false;
 	other._writeable = false;
 	other._seekable = false;
+	other._appendStart = -1;
 }
 
 //移动赋值运算符，先释放自身内容，再将other的内容移动过来，最后释放other的内容
@@ -71,6 +74,10 @@ FileStream& FileStream::operator=(FileStream&& other) noexcept
 	{
 		auto result = this->close(); //不处理返回值
 		Stream::operator=(static_cast<Stream&&>(other));
+		this->_fileMode = other._fileMode;
+		this->_fileAccess = other._fileAccess;
+		this->_fileShare = other._fileShare;
+		this->_filepath = std::move(other._filepath);
 		this->_hFile = other._hFile;
 		this->_buffer = move(other._buffer);
 		this->_capacity = other._capacity;
@@ -100,13 +107,30 @@ std::expected<void, std::string> FileStream::close()
 {
 	if (this->_hFile != INVALID_HANDLE_VALUE)
 	{
-		auto result = this->flush(true); CHECK_RESULT(result);
+		std::string flushError;
+		auto result = this->flush(true); //CHECK_RESULT(result);
+		if(!result)
+		{
+			flushError = std::move(result.error());
+		}
+
 		auto ret = CloseHandle(this->_hFile);
 		this->_hFile = INVALID_HANDLE_VALUE;
 		if(ret == FALSE)
 		{
-			return std::unexpected(WinUtils::getError("CloseHandle"));
+			auto closeError = WinUtils::getError("CloseHandle");
+			if(flushError.empty())
+			{
+				return std::unexpected(closeError);
+			}else
+			{
+				return std::unexpected(flushError + " " + closeError);
+			}
 		}	
+		if(flushError.empty() == false)
+		{
+			return std::unexpected(flushError);
+		}
 	}
 
 	return {};
@@ -144,6 +168,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 
 	this->_writePos = 0;
 	this->_readPos = 0;
+	this->_readLen = 0;
 
 	if (this->_appendStart != -1 && value < this->_appendStart)
 	{
@@ -195,7 +220,7 @@ std::expected<void, std::string> FileStream::setLength(long value)
 			}
 		}
 	}
-	
+	this->_position = (position < value ? position : value);
 	return {};
 }
 
@@ -403,7 +428,7 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 		return std::unexpected("文件未打开!!!");
 	}
 
-	if(offset < 0 || size < 0 || offset + count > size)
+	if(offset < 0 || size < 0 || count < 0 || offset + count > size)
 	{
 		return std::unexpected("输入参数不合法!!!");
 	}
@@ -488,7 +513,7 @@ std::expected<long, std::string>  FileStream::basic_write(const char* array, int
 		return std::unexpected("文件未打开!!!");
 	}
 
-	if(offset < 0 || size < 0 || offset + count > size)
+	if(offset < 0 || size < 0 || count < 0 || offset + count > size)
 	{
 		return std::unexpected("输入参数不合法!!!");
 	}
@@ -561,10 +586,11 @@ std::expected<void, std::string> FileStream::flushRead()
 		{
 			return std::unexpected(result.error());
 		}
-		this->_readPos = 0;
-		this->_writePos = 0;
 	}
 
+	this->_readPos = 0;
+	this->_writePos = 0;
+	this->_readLen = 0;
 	return {};
 }
 
@@ -661,6 +687,10 @@ std::expected<void, std::string> FileStream::init()
 	{
 		dwAccess = GENERIC_WRITE;
 		this->_writeable = true;
+		this->_readable = false;
+	}else
+	{
+		this->_writeable = false;
 		this->_readable = false;
 	}
 

@@ -1,7 +1,9 @@
 #include"STAWorker.h"
 #include<Windows.h>
+#include<process.h>
 #include<print>
 using namespace std;
+
 
 
 STAWorker::STAWorker()

@@ -23,7 +23,7 @@ public:
 
 	Stream(Stream&& other) noexcept;
 
-	Stream& operator=(const Stream&) = default;
+	Stream& operator=(const Stream&) = delete;
 
 	Stream& operator=(Stream&& other) = default;
 

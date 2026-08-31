@@ -26,7 +26,7 @@ public:
 
     ~STAWorker();
 
-private:
+protected:
     //消费者函数
     long consumer();
 
@@ -38,6 +38,13 @@ public:
 public:
     static void UnitTest();
 
+public:
+    static unsigned __stdcall threadProc(void* param)
+    {
+        STAWorker* worker = reinterpret_cast<STAWorker*>(param);
+        auto result = worker->consumer();
+        return 0;
+    }
 
 private:
     std::mutex mtx;

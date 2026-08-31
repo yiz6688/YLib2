@@ -2,6 +2,8 @@
 //#include"../utils/numUtils.h"
 #include <stdexcept>
 #include <algorithm>
+#include<cstring>
+#include<stdexcept>
 
 MemoryStream::MemoryStream()
 	:MemoryStream(1024)
@@ -21,9 +23,15 @@ MemoryStream::MemoryStream(int size)
 MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool visiable = false)
 	:_buffer{nullptr}, _ptr{data},_capacity{ dataLen }, _length{ offset + count }, _origin{ offset }, _expandable{ visiable }
 {
+	if(data == nullptr || dataLen < 0 || offset < 0 || offset + count > dataLen)
+	{
+		throw std::runtime_error("入参错误");
+	}
+
 	this->_writeable = true;
 	this->_readable = true;
 	this->_seekable = true;
+	this->_position = offset;
 
 }
 
@@ -39,7 +47,25 @@ std::expected<long, std::string> MemoryStream::getLength()
 
 std::expected<void, std::string> MemoryStream::setLength(long value)
 {
-	return std::unexpected("不允许设置长度");
+	if(value < 0)
+	{
+		return std::unexpected("设置长度不允许小于0");
+	}
+	if(value > this->_capacity)
+	{
+		auto result = this->ensureCapacity(value);
+		if(!result)
+		{
+			return std::unexpected("扩容失败");
+		}
+
+		std::memset(this->_ptr + (value - this->_length), 0 , value - this->_length);
+	}else
+	{
+		this->_position = value;
+	}
+
+	return {};
 }
 
 std::expected<long, std::string> MemoryStream::getPosition()
@@ -105,10 +131,9 @@ std::expected<void, std::string> MemoryStream::flush()
 
 std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin origin)
 {
-	long position = this->_position;
 	if (origin == SeekOrigin::Begin)
 	{
-		int num3 = this->_origin + offset;
+		auto num3 = this->_origin + offset;
 		if (offset < 0 || num3 < this->_origin)
 		{
 			return std::unexpected("seek超过了起始位置");  //发生了溢出
@@ -116,7 +141,7 @@ std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin orig
 		this->_position = num3;
 	}else if (origin == SeekOrigin::Current)
 	{
-		int num2 = this->_position + offset;
+		auto num2 = this->_position + offset;
 		if (num2 < this->_origin)
 		{
 			return std::unexpected("seek超过了起始位置");  //发生了溢出
@@ -125,7 +150,7 @@ std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin orig
 	}
 	else if (origin == SeekOrigin::End)
 	{
-		int num = this->_length + offset;
+		auto num = this->_length + offset;
 		if (num < this->_origin)
 		{
 			return std::unexpected("seek超过了起始位置");  //发生了溢出
@@ -156,7 +181,7 @@ std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size
 		return std::unexpected("输入参数不合法");
 	}
 	//剩余空间
-	int num = this->_length - this->_position;
+	auto num = this->_length - this->_position;
 	if (num > count)
 	{
 		num = count;
@@ -167,7 +192,7 @@ std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size
 	}
 	if (num <= 8)
 	{
-		int num2 = num;
+		auto num2 = num;
 		while (--num2 >= 0)
 		{
 			buffer[offset + num2] = this->_ptr[this->_position + num2];
@@ -175,7 +200,8 @@ std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size
 	}
 	else
 	{
-		std::copy_n(this->_ptr + this->_position, num, buffer + offset);
+		//std::copy_n(this->_ptr + this->_position, num, buffer + offset);
+		std::memmove(buffer + offset, this->_ptr + this->_position, num);
 	}
 	this->_position += num;
 	return num;
@@ -195,7 +221,7 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 		return std::unexpected("输入参数不合法");
 	}
 
-	int num = this->_position + count;
+	auto num = this->_position + count;
 	if (num < 0)
 	{
 		return std::unexpected("position overflow");  //读取越界了，太大了,很大的正数就是负数
@@ -235,7 +261,8 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 	}
 	else
 	{
-		std::copy_n(buffer + offset, count, this->_ptr + this->_position);
+		//std::copy_n(buffer + offset, count, this->_ptr + this->_position);
+		std::memmove(this->_ptr + this->_position, buffer + offset, count);
 	}
 
 	this->_position = num;
@@ -245,13 +272,18 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 
 bool MemoryStream::ensureCapacity(long value)
 {
+
 	if (value <= 0)
 	{
 		return false;
 	}
-	if (value > this->_capacity)
+
+	if(value <= this->_capacity)
 	{
-		int num = value;
+		return true;
+	}else
+	{
+		auto num = value;
 		if (num < 256)
 		{
 			num = 256;
@@ -261,7 +293,7 @@ bool MemoryStream::ensureCapacity(long value)
 			num = _capacity * 2;
 		}
 
-		if ((int)(this->_capacity * 2) > 2147483591u)
+		if ((long)(this->_capacity * 2) > 2147483591u)
 		{
 			num = ((value > 2147483591) ? value : 2147483591);
 		}
@@ -270,5 +302,4 @@ bool MemoryStream::ensureCapacity(long value)
 		return result.operator bool();
 	}
 
-	return true;
 }

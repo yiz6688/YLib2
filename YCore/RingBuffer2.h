@@ -35,11 +35,13 @@ public:
         :_capacity{ std::bit_ceil(bufferSize) }, _mask{ _capacity - 1 }, _gap{ gap }, 
 	_buffer(_mask + 1), _ptr{ _buffer.data() }
     {
-        if(this->_gap % sizeof(T) != 0)
+        if(this->_gap != sizeof(T))
         {
-            throw std::runtime_error("gap 必须是 当前类的整倍数");
+            if(this->_gap % sizeof(T) != 0)
+            {
+                throw std::runtime_error("gap 必须是 当前类的整倍数");
+            }
         }
-
         this->_cap_aligned = (this->_capacity / this->_gap) * this->_gap;
         this->_max_size = this->_cap_aligned - this->_gap;
     }
@@ -473,9 +475,9 @@ private:
 	unsigned _max_size;   //最大可用容量= _cap_aligned - _gap
 
 	//内部分配的空间
-	std::vector<char> _buffer;
+	std::vector<T> _buffer;
 	//缓冲区的引用
-	char* _ptr{ nullptr };
+	T* _ptr{ nullptr };
 
 
     alignas(64) std::atomic<TYPE1> write_pos{ 0 }; 
