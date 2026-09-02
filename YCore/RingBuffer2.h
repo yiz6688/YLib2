@@ -35,6 +35,10 @@ public:
         :_capacity{ std::bit_ceil(bufferSize) }, _mask{ _capacity - 1 }, _gap{ gap }, 
 	_buffer(_mask + 1), _ptr{ _buffer.data() }
     {
+        if(this->_gap == 0)
+        {
+            throw std::runtime_error("gap 不能为 0");
+        }
         if(this->_gap != sizeof(T))
         {
             if(this->_gap % sizeof(T) != 0)
@@ -43,6 +47,10 @@ public:
             }
         }
         this->_cap_aligned = (this->_capacity / this->_gap) * this->_gap;
+        if(this->_cap_aligned < this->_gap)
+        {
+            throw std::runtime_error("缓冲区容量不足以容纳一个 gap");
+        }
         this->_max_size = this->_cap_aligned - this->_gap;
     }
 	//使用外部空间包装环形缓冲区
@@ -108,7 +116,7 @@ public:
 	int read(T* buffer, int offset, int size)
     {
 
-        if(this->read_lock_len != 0 || size == 0)
+        if(this->read_lock_len != 0 || size <= 0)
         {
             return 0;
         }
@@ -214,37 +222,40 @@ public:
 	//从另一个环形缓冲区读
 	int readFrom(RingBuffer2& ring, int size)
     {
-        int nCapacity = ring.getCapacity();
-        //int nReadPos = 	ring.getReadPos();
-
-        int nReadPos = 0;// 待验证修复
-        int nReadSize = ring.getReadableBytes();
-        int nEndPos = nReadPos + nReadSize;
-
-        int size1 = nCapacity - nReadPos;
-        int size2 = 0;
-
-        int ReadSize = 0;
-
-        if (size1 > nReadPos)
+        if (this == &ring || size <= 0)
         {
-            size1 = nReadPos;
-        }
-        else
-        {
-            size2 = nReadPos - size1;
-        }
-        char* ptr1 = ring._ptr + nReadPos;
-        ReadSize = this->write(ptr1, size1);
-        
-        if (size2 > 0)
-        {
-            size1 = this->write(ring._ptr, size2);
-            ReadSize += size1;
+            return 0;
         }
 
+        int nReadSize = static_cast<int>(ring.getReadableBytes());
+        if (nReadSize > size)
+        {
+            nReadSize = size;
+        }
+        if (nReadSize <= 0)
+        {
+            return 0;
+        }
+        //readFrom 跨越两个 gap 可能不同的环形缓冲区:单个 size 无法同时保证是
+        //两个 gap 的整数倍,必须内部对齐到两者的最小公倍数,否则任一方坐标会漂移
+        unsigned ga = this->_gap;
+        unsigned gb = ring._gap;
+        unsigned a = ga, b = gb;
+        while (b != 0) { unsigned t = a % b; a = b; b = t; }
+        unsigned lcm = ga / a * gb;
+        nReadSize = (nReadSize / static_cast<int>(lcm)) * static_cast<int>(lcm);
+        if (nReadSize <= 0)
+        {
+            return 0;
+        }
 
-        return ReadSize;
+        std::vector<char> tmp(static_cast<size_t>(nReadSize));
+        int got = ring.read(tmp.data(), nReadSize);
+        if (got <= 0)
+        {
+            return 0;
+        }
+        return this->write(tmp.data(), got);
     }
 
 	//写入到另一个环形缓冲区
@@ -353,7 +364,7 @@ public:
             this->read_lock_len = tailBytes;
         }
 
-        this->read_pos.store(rpos, std::memory_order_release);
+        //this->read_pos.store(rpos, std::memory_order_release);
         return std::span<T>(rptr, this->read_lock_len);
     }
 

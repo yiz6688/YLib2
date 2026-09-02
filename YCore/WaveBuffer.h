@@ -122,7 +122,7 @@ private:
             double value = 0.0;
             for(int i=0; i<nFrames; i++)
             {
-                std::memcpy(&src, src, 8);
+                std::memcpy(&value, src, 8);
                 *dest = value;
                 src += this->_frameSize; //起始指针
                 dest++;
@@ -133,7 +133,7 @@ private:
             float value = 0.0f;
             for(int i=0; i<nFrames; i++)
             {
-                std::memcpy(&src, src, 4);
+                std::memcpy(&value, src, 4);
                 *dest = value;
                 src += this->_frameSize; //起始指针
                 dest++;
@@ -173,9 +173,12 @@ private:
                 src += this->_frameSize; //起始指针
                 dest++;
             }
+        }else
+        {
+            return 0;
         }
         
-        return 0;
+        return nFrames;
     }
 
     template<typename F>
@@ -187,10 +190,10 @@ private:
 
         if(this->_type == SampleType::IEEE64)
         {
-            double value = 0.0f;
+            double value = 0.0;
             for(int i=0; i<nFrames; i++)
             {
-                value = static_cast<float>(src[i]);
+                value = src[i];
                 std::memcpy(dest, &value, 8);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -201,7 +204,7 @@ private:
             float value = 0.0f;
             for(int i=0; i<nFrames; i++)
             {
-                value = static_cast<float>(src[i]);
+                value = src[i];
                 std::memcpy(dest, &value, 4);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -211,7 +214,8 @@ private:
             int value = 0;
             for(int i=0; i<nFrames; i++)
             {
-                value = static_cast<int>(std::round(*src *(std::numeric_limits<int>::max)()));
+                double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
+                value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<int>::max)())));
                 std::memcpy(dest, &value, 4);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -221,7 +225,8 @@ private:
             int24 value = 0;
             for(int i=0; i<nFrames; i++)
             {
-                value = static_cast<int>(std::round(*src *(std::numeric_limits<int24>::max)()));
+                double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
+                value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<int24>::max)())));
                 std::memcpy(dest, &value, 3);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -231,14 +236,18 @@ private:
             short value = 0;
             for(int i=0; i<nFrames; i++)
             {
-                value = static_cast<int>(std::round(*src *(std::numeric_limits<short>::max)()));
+                double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
+                value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<short>::max)())));
                 std::memcpy(dest, &value, 2);
                 src++;
                 dest += this->_frameSize; //起始指针
             }
+        }else
+        {
+            return 0;
         }
         
-        return 0;
+        return nFrames;
     }
 
 

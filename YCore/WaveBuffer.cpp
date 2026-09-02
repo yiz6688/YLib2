@@ -88,7 +88,7 @@ int WaveBuffer::writeSample(WaveMix &mix, int sampleNum)
         for(auto& sample : samples)
         {
             auto dest = buf.data();  //起始指针位置
-            if(this->_type == SampleType::IEEE32)
+            if(mix._type == SampleType::IEEE32)
             {
                 auto src = sample.pf + rdFrames;
                 this->fromFloat32(src, dest, nFrames, sample._chnInx);
@@ -113,7 +113,6 @@ int WaveBuffer::readRaw(WaveMix &mix, int sampleNum)
         return 0;  //不进行读取
     }
 
-    int rdSamples = 0;  //读取的采样点数;
     int rdFrames = 0;  //读取的帧数
 
 
@@ -156,7 +155,6 @@ int WaveBuffer::writeRaw(WaveMix &mix, int sampleNum)
         return 0;  //不进行读取
     }
 
-    int rdSamples = 0;  //读取的采样点数;
     int rdFrames = 0;  //读取的帧数
 
     while(true)
