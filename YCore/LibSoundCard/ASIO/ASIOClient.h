@@ -17,17 +17,19 @@ class ASIODriver;
 class ASIOClient
 {
 public:
-	ASIOClient(CLSID clsid);
+	ASIOClient(ASIODriver* pDriver)
+		:pDriver{pDriver}
+	{};
 
 
 
-public:
+private:
 	TResult<void> init(CLSID clsid);
 
 
 public:
 
-	//获取录音器数量
+		//获取录音器数量
 	int getCaptureCount();
 	//获取播放器数量
 	int getRenderCount();
@@ -36,11 +38,10 @@ public:
 
 	std::string getRenderName(int channel);
 
-	//获取采样率
-	int getSampleRate();
+			//获取采样率
+	TResult<int> getSampleRate();
 	//设置采样率
 	TResult<void> setSampleRate(long sampleRate);
-
 
 public:
 
@@ -56,5 +57,5 @@ public:
 
 public:
 
-	std::unique_ptr<ASIODriver> pDriver;  //驱动的指针。
+	ASIODriver* pDriver;  //驱动的指针。
 };

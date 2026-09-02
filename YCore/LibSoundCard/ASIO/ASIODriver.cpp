@@ -561,6 +561,61 @@ STAType ASIODriver::setChannelMask(unsigned inputMask, unsigned outputMask)
 	return this->pAsioDevice->setChannelMask(inputMask, outputMask);
 }
 
+TResult<int> ASIODriver::getSampleRate()
+{
+    auto future = this->staWorker.submit(
+		[this] {
+			return this->pAsioDevice->getSampleRate();
+		});
+	auto result = future.get();
+	if (!result)
+	{
+		return std::unexpected(result.error());
+	}
+
+	return this->pAsioDevice->sampleRate;
+}
+
+TResult<void> ASIODriver::setSampleRate(long sampleRate)
+{
+    auto future = this->staWorker.submit(
+		[this, sampleRate] {
+			return this->pAsioDevice->setSampleRate(sampleRate);
+		});
+
+	return future.get();
+}
+
+int ASIODriver::getCaptureCount()
+{
+    return this->pAsioDevice->inputChannels.size();
+}
+
+int ASIODriver::getRenderCount()
+{
+    return this->pAsioDevice->outputChannels.size();
+}
+
+std::string ASIODriver::getCaptureName(int channel)
+{
+    if(channel < 0 || channel >= this->pAsioDevice->inputChannels.size())
+	{
+		return std::string();
+	}
+
+	return this->pAsioDevice->inputChannels[channel].name;
+}
+
+std::string ASIODriver::getRenderName(int channel)
+{
+    if(channel < 0 || channel >= this->pAsioDevice->outputChannels.size())
+	{
+		return std::string();
+	}
+
+	return this->pAsioDevice->outputChannels[channel].name;	
+}
+
 std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid)
 {
 

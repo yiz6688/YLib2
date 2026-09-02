@@ -62,6 +62,22 @@ public:
 	STAType setChannelMask(unsigned inputMask, unsigned outputMask);
 
 
+		//获取采样率
+	TResult<int> getSampleRate();
+	//设置采样率
+	TResult<void> setSampleRate(long sampleRate);
+
+		//获取录音器数量
+	int getCaptureCount();
+	//获取播放器数量
+	int getRenderCount();
+
+	std::string getCaptureName(int channel);
+
+	std::string getRenderName(int channel);
+
+
+
 
 public:
 

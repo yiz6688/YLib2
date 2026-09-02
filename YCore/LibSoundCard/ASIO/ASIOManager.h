@@ -4,6 +4,7 @@
 #include<vector>
 #include"ASIOClient.h"
 #include<expected>
+#include"TResult.h"
 
 //驱动信息
 
@@ -22,7 +23,7 @@ public:
 
 	ASIOInfo* operator[](unsigned index);
 
-	std::expected<ASIOClient*, std::string> createClient(unsigned index);
+	TPResult<ASIOClient> createClient(unsigned index);
 
 private:
 	std::vector<ASIOInfo> asioInfos;

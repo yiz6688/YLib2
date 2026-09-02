@@ -94,7 +94,7 @@ public:
 	//计数为1时 调用驱动stop，计数大于1 -1返回
 	unsigned start_counter;  //运行计数器
 
-	unsigned runningCounter;  //运行计数器
+	unsigned runningCounter = 0;  //运行计数器
 
 
 	//运行中的实例计数,每调用一次start，计数+1， 每调用一次stop，计数-1

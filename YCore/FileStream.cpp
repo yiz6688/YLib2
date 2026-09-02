@@ -5,7 +5,7 @@
 #include"Encoding.h"
 #include"WinUtils.h"
 #include<cstring>
-#include<print>
+#include<climits>
 
 using namespace std;
 
@@ -21,24 +21,9 @@ FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileA
 	this->_writeable = true;
 	this->_seekable = true;
 
-	// if (filepath.empty())
-	// {
-	// 	//throw invalid_argument("文件字符串不能为空");
-	// }
-
 	this->_buffer = make_unique<char[]>(this->_capacity);
 	this->_writePos = 0;
 	this->_readPos = 0;
-
-	SetErrorMode(1); //系统不弹窗，将错误发送给调用进程
-
-
-	// auto result = this->init();
-	// if (!result)
-	// {
-	// 	println("{}", result.error());
-	// 	throw runtime_error(result.error());
-	// }
 }
 
 FileStream::FileStream(const std::string_view filepath, FileMode fileMode, FileAccess fileAccess)
@@ -81,6 +66,7 @@ FileStream& FileStream::operator=(FileStream&& other) noexcept
 		this->_hFile = other._hFile;
 		this->_buffer = move(other._buffer);
 		this->_capacity = other._capacity;
+		this->_appendStart = other._appendStart;
 		this->_readPos = other._readPos;
 		this->_readLen = other._readLen;
 		this->_writePos = other._writePos;
@@ -90,6 +76,7 @@ FileStream& FileStream::operator=(FileStream&& other) noexcept
 		other._readable = false;
 		other._writeable = false;
 		other._seekable = false;
+		other._appendStart = -1;
 	}
 	return *this;
 }
@@ -239,14 +226,23 @@ std::expected<long, std::string> FileStream::getLength()
 	{
 		return std::unexpected(WinUtils::getError("GetFileSizeEx"));
 	}
-
-	long length = this->_writePos + this->_position;
-	if (this->_writePos > 0 && length > size.QuadPart)
+	if (size.QuadPart < 0 || size.QuadPart > LONG_MAX)
 	{
-		return length;
+		return std::unexpected("文件大小超出 long 表示范围(>2GB)");
 	}
 
-	return static_cast<long>(size.QuadPart);
+	long fileLength = static_cast<long>(size.QuadPart);
+	long long logical = static_cast<long long>(this->_writePos) + this->_position;
+	if (this->_writePos > 0 && logical > fileLength)
+	{
+		if (logical > LONG_MAX)
+		{
+			return std::unexpected("逻辑长度超出 long 表示范围");
+		}
+		return static_cast<long>(logical);
+	}
+
+	return fileLength;
 }
 
 std::expected<long, std::string> FileStream::getPosition()
@@ -396,8 +392,6 @@ std::expected<long, std::string> FileStream::seek(long offset, SeekOrigin origin
 		long k = num2 - num;
 		if (k > -this->_readPos && k < this->_readLen - this->_readPos)
 		{
-			// std::copy_n(this->_buffer.get() + this->_readPos + k, 
-			// 	this->_readLen - this->_readPos - k,  this->_buffer.get());
 			std::memmove(this->_buffer.get(), this->_buffer.get() + this->_readPos + k, 
 						this->_readLen - this->_readPos - k);
 			this->_readLen -= _readPos + k;
@@ -428,7 +422,7 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 		return std::unexpected("文件未打开!!!");
 	}
 
-	if(offset < 0 || size < 0 || count < 0 || offset + count > size)
+	if(offset < 0 || size < 0 || count < 0 || offset > size - count)
 	{
 		return std::unexpected("输入参数不合法!!!");
 	}
@@ -436,6 +430,11 @@ std::expected<long, std::string> FileStream::basic_read(char* array, int size, i
 	if (this->canRead() == false)
 	{
 		return std::unexpected("文件不支持读取");
+	}
+
+	if (count == 0)
+	{
+		return 0;
 	}
 
 	//如果之前是写入场景，先将缓冲区内容写入文件中，再进行读取
@@ -513,7 +512,7 @@ std::expected<long, std::string>  FileStream::basic_write(const char* array, int
 		return std::unexpected("文件未打开!!!");
 	}
 
-	if(offset < 0 || size < 0 || count < 0 || offset + count > size)
+	if(offset < 0 || size < 0 || count < 0 || offset > size - count)
 	{
 		return std::unexpected("输入参数不合法!!!");
 	}
@@ -521,6 +520,11 @@ std::expected<long, std::string>  FileStream::basic_write(const char* array, int
 	if (this->canWrite() == false)
 	{
 		return std::unexpected("文件不支持写入");
+	}
+
+	if (count == 0)
+	{
+		return 0;
 	}
 
 	if (this->_writePos == 0)  //写指针为0，之前可能是读场景，先清理读状态
@@ -559,6 +563,14 @@ std::expected<long, std::string>  FileStream::basic_write(const char* array, int
 
 			this->_writePos = 0;
 			//这里写的是历史数据，不计入本次写入数量
+		}
+
+		//缓冲区已清空，小数据仍走缓冲，避免大量小写入触发过多的系统调用
+		if (count < this->_capacity)
+		{
+			std::copy_n(array + offset, count, this->_buffer.get());
+			this->_writePos = count;
+			return count;
 		}
 
 		//将外部数据写入文件
@@ -616,9 +628,13 @@ std::expected<long, std::string> FileStream::flushWrite()
 
 std::expected<long, std::string> FileStream::writeCore(const char* data, int size, int offset, int count)
 {
-	if(size < 0 || offset + count > size)
+	if(count < 0 || offset < 0 || size < 0 || offset > size - count)
 	{
 		return std::unexpected("无效的缓冲区大小或者偏移量");
+	}
+	if (count == 0)
+	{
+		return 0;
 	}
 	DWORD wSize = 0;
 	auto ret = WriteFile(this->_hFile, data + offset, count, &wSize, NULL);
@@ -626,15 +642,24 @@ std::expected<long, std::string> FileStream::writeCore(const char* data, int siz
 	{
 		return std::unexpected(WinUtils::getError("WriteFile"));
 	}
-	this->_position += wSize;
+	long long newPos = static_cast<long long>(this->_position) + wSize;
+	if (newPos > LONG_MAX)
+	{
+		return std::unexpected("文件位置超出 long 表示范围");
+	}
+	this->_position = static_cast<long>(newPos);
 	return wSize;
 }
 
 std::expected<long, std::string> FileStream::readCore(char* data, int size, int offset, int count)
 {
-	if(size < 0 || offset + count > size)
+	if(count < 0 || offset < 0 || size < 0 || offset > size - count)
 	{
 		return std::unexpected("无效的缓冲区大小或者偏移量");
+	}
+	if (count == 0)
+	{
+		return 0;
 	}
 	DWORD rSize = 0;
 	auto ret = ReadFile(this->_hFile, data + offset, count, &rSize, NULL);
@@ -643,7 +668,12 @@ std::expected<long, std::string> FileStream::readCore(char* data, int size, int 
 		return std::unexpected(WinUtils::getError("ReadFile"));
 		//读取文件失败
 	}
-	this->_position += rSize;
+	long long newPos = static_cast<long long>(this->_position) + rSize;
+	if (newPos > LONG_MAX)
+	{
+		return std::unexpected("文件位置超出 long 表示范围");
+	}
+	this->_position = static_cast<long>(newPos);
 	return rSize;
 }
 
@@ -656,6 +686,10 @@ std::expected<long, std::string> FileStream::seekCore(long offset, SeekOrigin or
 	if (ret == FALSE)
 	{
 		return std::unexpected(WinUtils::getError("SetFilePointerEx"));
+	}
+	if (newPos.QuadPart < 0 || newPos.QuadPart > LONG_MAX)
+	{
+		return std::unexpected("文件位置超出 long 表示范围");
 	}
 	this->_position = static_cast<long>(newPos.QuadPart);  //刷新当前位置
 	return this->_position;
@@ -732,6 +766,8 @@ std::expected<void, std::string> FileStream::init()
 	}
 
 	wstring wpath = Encoding::GBKToUTF16(this->_filepath);
+	//仅在 CreateFileW 期间屏蔽系统错误弹窗，之后恢复原有设置
+	UINT oldMode = SetErrorMode(SEM_FAILCRITICALERRORS);
 	this->_hFile = CreateFileW(wpath.c_str(),
 		dwAccess,   //文件访问权限 读写  如果是0就是不请求只是用来查询
 		dwShareMode,    //指定文件共享模式 允许其他进程读取这个文件
@@ -739,6 +775,7 @@ std::expected<void, std::string> FileStream::init()
 		dwFileMode,			//指定如何创建或打开文件  CREATE_NEW表示创建新文件，如果文件已存在则失败
 		0,				//文件属性和标志  FILE_ATTRIBUTE_NORMAL表示普通文件，可以在这里设置FILE_FLAG_OVERLAPPED等标志来控制文件的行为
 		NULL);				//模板文件句柄 0表示不使用模板文件
+	SetErrorMode(oldMode);
 
 	if (this->_hFile == INVALID_HANDLE_VALUE)
 	{

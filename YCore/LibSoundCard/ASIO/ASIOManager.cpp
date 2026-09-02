@@ -98,7 +98,7 @@ ASIOInfo* ASIOManager::operator[](unsigned index)
 	return &this->asioInfos[index];
 }
 
-std::expected<ASIOClient*, std::string> ASIOManager::createClient(unsigned index)
+TPResult<ASIOClient> ASIOManager::createClient(unsigned index)
 {
 	ASIOInfo* info = this->getDeviceInfo(index);
 
@@ -106,7 +106,7 @@ std::expected<ASIOClient*, std::string> ASIOManager::createClient(unsigned index
 	if (result)
 	{
 		ASIODriver* driver = result.value();
-		return std::unexpected("Failed to create ASIO driver");
+		return std::make_unique<ASIOClient>(driver);
 	}
 	else
 	{

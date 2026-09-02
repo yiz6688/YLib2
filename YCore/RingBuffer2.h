@@ -32,7 +32,7 @@ private:
 public:
 	//构造指定大小的缓冲区
 	RingBuffer2(unsigned bufferSize, unsigned int gap = sizeof(T))
-        :_capacity{ std::bit_ceil(bufferSize) }, _mask{ _capacity - 1 }, _gap{ gap }, 
+        :_capacity{ normalizeCapacity(bufferSize) }, _mask{ _capacity - 1 }, _gap{ gap }, 
 	_buffer(_mask + 1), _ptr{ _buffer.data() }
     {
         if(this->_gap == 0)
@@ -133,9 +133,9 @@ public:
         {
             return 0;
         }
-        if (readableBytes > size)
+        if (readableBytes > static_cast<TYPE1>(size))
         {
-            readableBytes = size;  //修正可读数量
+            readableBytes = static_cast<TYPE1>(size);  //修正可读数量
         }
 
 
@@ -173,7 +173,7 @@ public:
 	
 	int write(const char* data, int offset, int size)
     {
-        if(this->write_lock_len != 0 || size == 0)
+        if(this->write_lock_len != 0 || size <= 0)
         {
             return 0;
         }
@@ -190,9 +190,9 @@ public:
             return 0;
         }
 
-        if (writeableBytes > size)
+        if (writeableBytes > static_cast<TYPE1>(size))
         {
-            writeableBytes = size;
+            writeableBytes = static_cast<TYPE1>(size);
         }
 
         auto size1 = this->_cap_aligned - writePos;  //读指针到尾部的空间
@@ -293,7 +293,6 @@ public:
             this->write_lock_len = tailBytes;
         }
 
-        this->write_pos.store(wpos, std::memory_order_release);
         return std::span<T>(wptr, this->write_lock_len);
     }
 
@@ -314,7 +313,6 @@ public:
 
         //这里必定不会产生回绕
         auto wpos = this->write_pos.load(std::memory_order_relaxed);
-        //auto rpos = this->read_pos.load(std::memory_order_acquire);
 
         auto releaseSize = this->write_lock_len > size ? size : this->write_lock_len;
 
@@ -364,7 +362,6 @@ public:
             this->read_lock_len = tailBytes;
         }
 
-        //this->read_pos.store(rpos, std::memory_order_release);
         return std::span<T>(rptr, this->read_lock_len);
     }
 
@@ -378,7 +375,6 @@ public:
             size = this->read_lock_len;
         }
         //这里必定不会产生回绕
-        //auto wpos = this->write_pos.load(std::memory_order_acquire);
         auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
         auto releaseSize = this->read_lock_len > size ? size : this->read_lock_len;
@@ -402,6 +398,20 @@ public:
 
 
 private:
+	static unsigned normalizeCapacity(unsigned bufferSize)
+    {
+        if (bufferSize == 0)
+        {
+            bufferSize = 1;
+        }
+        //bit_ceil 对超过 2^31 的输入会溢出为 0
+        if (bufferSize > (1u << 31))
+        {
+            throw std::runtime_error("bufferSize 过大，超出 unsigned 可表示范围");
+        }
+        return std::bit_ceil(bufferSize);
+    }
+
 	TYPE1 calcReadableBytes(TYPE1 wpos, TYPE1 rpos)
 	{
 		auto bytes = (wpos - rpos) & this->_mask;

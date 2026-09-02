@@ -3,12 +3,6 @@
 
 #include"ASIODriver.h"
 
-ASIOClient::ASIOClient(CLSID clsid)
-    :pDriver{nullptr}
-{
-
-}
-
 TResult<void> ASIOClient::init(CLSID clsid)
 {
     auto aa = ASIODriver::createDriver(clsid); //创建驱动
@@ -27,35 +21,30 @@ TResult<void> ASIOClient::init(CLSID clsid)
 
 int ASIOClient::getCaptureCount()
 {
-    int size1 = this->pDriver->pAsioDevice->inputChannels.size();
-    return 0;
+    return this->pDriver->getCaptureCount();
 }
 
 int ASIOClient::getRenderCount()
 {
-    int size1 = this->pDriver->pAsioDevice->inputChannels.size();
-    return 0;
+    return this->pDriver->getRenderCount();
 }
 
 std::string ASIOClient::getCaptureName(int ch)
 {
-    auto& channels = this->pDriver->pAsioDevice->inputChannels;
-    auto name = channels[ch];
-    return std::string();
+    return this->pDriver->getCaptureName(ch);
 }
 
 std::string ASIOClient::getRenderName(int channel)
 {
-    return std::string();
+    return this->pDriver->getRenderName(channel);
 }
 
-int ASIOClient::getSampleRate()
+TResult<int> ASIOClient::getSampleRate()
 {
-    return 0;
+    return this->pDriver->getSampleRate();
 }
 
 TResult<void> ASIOClient::setSampleRate(long sampleRate)
 {
-    return this->pDriver->pAsioDevice->setSampleRate(sampleRate);
-    //return TResult<void>();
+    return this->pDriver->setSampleRate(sampleRate);
 }

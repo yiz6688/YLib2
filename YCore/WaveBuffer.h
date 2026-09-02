@@ -4,6 +4,8 @@
 #include"RingBuffer2.h"
 #include<vector>
 #include<cstring>
+#include<limits>
+#include<algorithm>
 
 
 
@@ -34,6 +36,7 @@ struct WaveMix
 public:
 
     WaveMix()
+        :_type{ SampleType::UNKNOWN }
     {}
 
     WaveMix(SampleType type)
@@ -193,7 +196,7 @@ private:
             double value = 0.0;
             for(int i=0; i<nFrames; i++)
             {
-                value = src[i];
+                value = *src;
                 std::memcpy(dest, &value, 8);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -204,7 +207,7 @@ private:
             float value = 0.0f;
             for(int i=0; i<nFrames; i++)
             {
-                value = src[i];
+                value = *src;
                 std::memcpy(dest, &value, 4);
                 src++;
                 dest += this->_frameSize; //起始指针
@@ -214,6 +217,7 @@ private:
             int value = 0;
             for(int i=0; i<nFrames; i++)
             {
+                //用 double 计算:float 精度无法精确表示 2^31-1,1.0f*INT_MAX 会舍入成 2^31 而溢出
                 double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
                 value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<int>::max)())));
                 std::memcpy(dest, &value, 4);

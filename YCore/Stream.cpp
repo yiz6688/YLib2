@@ -7,7 +7,7 @@ Stream::Stream()
 }
 
 Stream::Stream(Stream&& other) noexcept
-	: _position(other._position), _readable(other._readable), 
+	: _position(other._position), _readable(other._readable),
 	_writeable(other._writeable), _seekable(other._seekable)
 {
 	other._position = 0;
@@ -59,35 +59,29 @@ void Stream::copyTo(Stream& stream)
 
 void Stream::InternalCopyTo(Stream& stream, int bufferSize)
 {
+	if (bufferSize <= 0)
 	{
-		char* array = new char[bufferSize];
-		int count;
-		while (true)
+		return;
+	}
+	//使用 vector 管理缓冲区，避免手动 new/delete 可能引发的内存泄漏
+	std::vector<char> array(static_cast<size_t>(bufferSize));
+	long count;
+	while (true)
+	{
+		auto result = this->read(array.data(), bufferSize);
+		if (!result)
 		{
-			auto result = this->read(array, bufferSize);
-			if (!result)
-			{
-				delete[] array;
-				return;
-			}
-			count = result.value();
-			if (count == 0)
-			{
-				delete[] array;
-				return;
-			}
-			auto writeResult = stream.write(array, count);
-			if (!writeResult)
-			{
-				delete[] array;
-				return;
-			}
+			return;
 		}
-		//while ((count = this->read(array, bufferSize)) != 0)
-		//{
-		//	stream.write(array, count);
-		//}
+		count = result.value();
+		if (count == 0)
+		{
+			return;
+		}
+		auto writeResult = stream.write(array.data(), static_cast<int>(count));
+		if (!writeResult)
+		{
+			return;
+		}
 	}
 }
-
-
