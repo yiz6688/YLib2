@@ -266,8 +266,8 @@ std::expected<void, std::string> WaveReader::setPosition(long value)
 
 std::expected<long, std::string> WaveReader::seek(long offset, SeekOrigin origin)
 {
-	auto pos = this->_stream->getPosition();
-	auto len = this->_stream->getLength();
+	auto pos = this->_stream->getPosition(); CHECK_RESULT(pos);
+	auto len = this->_stream->getLength();   CHECK_RESULT(len);
 
 	if (origin == SeekOrigin::Current)
 	{
@@ -297,7 +297,7 @@ std::expected<void, std::string> WaveReader::setTimePos(long mills)
 
 std::expected<long, std::string> WaveReader::getTimePos()
 {
-	auto pos = this->getPosition();
+	auto pos = this->getPosition(); CHECK_RESULT(pos);
 	if (!pos)
 	{
 		return pos;
@@ -467,6 +467,14 @@ std::expected<long, std::string>  WaveReader::read(char* buffer, int size)
 
 std::expected<long, std::string>  WaveReader::read(char* buffer, int size, int offset, int count)
 {
+	if (offset < 0 || size < 0 || count < 0 || offset > size - count)
+	{
+		return std::unexpected("输入参数不合法");
+	}
+	if (count == 0)
+	{
+		return 0;
+	}
 	auto result = this->getPosition(); CHECK_RESULT(result);
 	auto value = this->_dataSize - result.value();
 	if (value <= 0)
@@ -479,7 +487,7 @@ std::expected<long, std::string>  WaveReader::read(char* buffer, int size, int o
 		value = count;
 	}
 
-	return this->_stream->read(buffer + offset, value);
+	return this->_stream->read(buffer + offset, static_cast<int>(value));
 }
 
 const WaveFormat& WaveReader::getWaveFormat() const

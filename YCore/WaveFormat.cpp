@@ -166,28 +166,46 @@ std::expected<void, std::string> WaveFormat::writeTo(Stream* stream)
     BinaryStream writer(stream);
     try
     {
+        char buffer[22] = {0};
+        int offset = 0;
+        int size = 0;
         if (this->extraSize == -1)
         {
-            writer.tryWrite(int32_t(16));
+            //writer.tryWrite(int32_t(16));
+            size = 16;
+            memcpy(buffer + offset, &size, sizeof(int32_t));    offset += sizeof(int32_t);
         }
         else
         {
-            writer.tryWrite(int32_t(18 + this->extraSize));
+            //writer.tryWrite(int32_t(18 + this->extraSize));
+            size = 18 + this->extraSize;
+            memcpy(buffer + offset, &size, sizeof(int32_t));    offset += sizeof(int32_t);
         }
-        writer.tryWrite(int16_t(this->waveFormatTag));
-        writer.tryWrite(int16_t(this->channels));
-        writer.tryWrite(int32_t(this->sampleRate));
-        writer.tryWrite(int32_t(this->bytesPerSec));
-        writer.tryWrite(int16_t(this->blockAlign));
-        writer.tryWrite(int16_t(this->bitsPerSample));
+        //writer.tryWrite(int16_t(this->waveFormatTag));
+        memcpy(buffer + offset, &this->waveFormatTag, sizeof(int16_t));  offset += sizeof(int16_t);
+        //writer.tryWrite(int16_t(this->channels));
+        memcpy(buffer + offset, &this->channels, sizeof(int16_t));   offset += sizeof(int16_t);
+        //writer.tryWrite(int32_t(this->sampleRate));
+        memcpy(buffer + offset, &this->sampleRate, sizeof(int32_t)); offset += sizeof(int32_t);
+        //writer.tryWrite(int32_t(this->bytesPerSec));
+        memcpy(buffer + offset, &this->bytesPerSec, sizeof(int32_t));   offset += sizeof(int32_t);
+        //writer.tryWrite(int16_t(this->blockAlign));
+        memcpy(buffer + offset, &this->blockAlign, sizeof(int16_t));    offset += sizeof(int16_t);
+        //writer.tryWrite(int16_t(this->bitsPerSample));
+        memcpy(buffer + offset, &this->bitsPerSample, sizeof(int16_t));    offset += sizeof(int16_t);
         if (this->extraSize != -1)
         {
-            writer.tryWrite(int16_t(this->extraSize));
+            //writer.tryWrite(int16_t(this->extraSize));
+            memcpy(buffer + offset, &this->extraSize, sizeof(int16_t));    offset += sizeof(int16_t); 
+            stream->write(buffer, offset);
             auto ret = stream->write(this->extraData.data(), static_cast<int>(this->extraData.size()));
             if (!ret)
             {
                 return std::unexpected{ "Failed to write extra data" };
             }
+        }else
+        {
+            stream->write(buffer, offset);
         }
     }
     catch (const std::exception& ex)

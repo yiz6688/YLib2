@@ -11,6 +11,10 @@ public:
 
 	MemoryStream(char* data, int dataLen, int offset, int count, bool visiable = false);
 
+	MemoryStream(MemoryStream&& other) noexcept;
+
+	MemoryStream& operator=(MemoryStream&& other) noexcept;
+
 	~MemoryStream();
 
 	std::expected<long, std::string> getLength() override;

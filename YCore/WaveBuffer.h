@@ -111,6 +111,13 @@ public:
     int writeBytes(char* ptr, int byteSize);
     int readBytes(char* ptr, int byteSize);
 
+    std::span<char> getReadBuffer(int perChSize);
+    int releaseReadBuffer();
+
+    std::span<char> getWriteBuffer(int perChSize);
+    int releaseWriteBuffer();
+
+
 private:
 
     template<typename F>

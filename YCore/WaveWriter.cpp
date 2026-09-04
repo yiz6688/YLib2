@@ -195,11 +195,14 @@ std::expected<long, std::string> WaveWriter::getPosition()
 
 std::expected<void, std::string> WaveWriter::setPosition(long value)
 {
-	auto len = this->_stream->getLength();
+	auto len = this->_stream->getLength(); CHECK_RESULT(len);
 	
 	if (value > len.value())
 	{
 		value = len.value();
+	}else if(value < 0)
+	{
+		value = 0;
 	}
 	value -= (value % this->_fmt->getBlockAlign());  //对齐采样块
 
@@ -208,8 +211,8 @@ std::expected<void, std::string> WaveWriter::setPosition(long value)
 
 std::expected<long, std::string> WaveWriter::seek(long offset, SeekOrigin origin)
 {
-	auto pos = this->_stream->getPosition();
-	auto len = this->_stream->getLength();
+	auto pos = this->_stream->getPosition(); CHECK_RESULT(pos);
+	auto len = this->_stream->getLength();	CHECK_RESULT(len);
 
 	if (origin == SeekOrigin::Current)
 	{
@@ -250,19 +253,22 @@ std::expected<long, std::string> WaveWriter::getTimePos()
 std::expected<void, std::string> WaveWriter::writeWaveHeader()
 {
 
-
-	auto result = this->_stream->write("RIFF"); CHECK_RESULT(result);
-	result = this->_stream->write("\0\0\0\0", 4); CHECK_RESULT(result); //riff块大小，占位，后续更新 4字节
-	result = this->_stream->write("WAVE"); CHECK_RESULT(result);
-	result = this->_stream->write("fmt "); CHECK_RESULT(result);
+	char buffer[16] = { 0 };
+	std::copy_n("RIFF\0\0\0\0WAVEfmt ", 16, buffer);
+	auto result = this->_stream->write(buffer, 16); CHECK_RESULT(result);
+	// auto result = this->_stream->write("RIFF"); CHECK_RESULT(result);
+	// result = this->_stream->write("\0\0\0\0", 4); CHECK_RESULT(result); //riff块大小，占位，后续更新 4字节
+	// result = this->_stream->write("WAVE"); CHECK_RESULT(result);
+	// result = this->_stream->write("fmt "); CHECK_RESULT(result);
 	auto ret = this->_fmt->writeTo(this->_stream); CHECK_RESULT(ret);
 
 	result = this->_stream->getPosition();  CHECK_RESULT(result);//记录data块size的位置，后续更新
 	this->_dataPos = result.value();
 
-	result = this->_stream->write("data"); CHECK_RESULT(result);
-	result = this->_stream->write("\0\0\0\0", 4);  CHECK_RESULT(result);//data块大小，占位，后续更新  4字节
-
+	std::copy_n("data\0\0\0\0", 8, buffer);
+	//result = this->_stream->write("data"); CHECK_RESULT(result);
+	//result = this->_stream->write("\0\0\0\0", 4);  CHECK_RESULT(result);//data块大小，占位，后续更新  4字节
+	result = this->_stream->write(buffer, 8); CHECK_RESULT(result);
 
 	return {};
 }
@@ -291,17 +297,20 @@ const WaveFormat& WaveWriter::getWaveFormat()
 
 std::expected<void, std::string> WaveWriter::updateHeader()
 {
-	BinaryStream bs(this->_stream);
 	//获取当前写指针
 	auto position = this->getPosition(); CHECK_RESULT(position);
+
+	auto lenResult = this->_stream->getLength(); CHECK_RESULT(lenResult);
+	long fileLen = lenResult.value();
+
 	//更新RIFF
 	auto result = this->_stream->seek(4, SeekOrigin::Begin); CHECK_RESULT(result);
-
-	result = bs.write(int32_t(this->_stream->getLength().value() - 8)); CHECK_RESULT(result);
+	int val = static_cast<int>(fileLen - 8);
+	result = this->_stream->write(reinterpret_cast<char*>(&val), 4); CHECK_RESULT(result);
 
 	//更新data块
 	result = this->_stream->seek(this->_dataPos + 4, SeekOrigin::Begin); CHECK_RESULT(result);
-	result = bs.write((int32_t)this->_dataSize); CHECK_RESULT(result);
+	result = this->_stream->write(reinterpret_cast<char*>(&this->_dataSize), 4); CHECK_RESULT(result);
 	//恢复原来的位置
 	auto ret = this->setPosition(position.value()); CHECK_RESULT(ret);
 	return {};

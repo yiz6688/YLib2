@@ -43,6 +43,35 @@ MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool 
 	this->_position = offset;
 }
 
+MemoryStream::MemoryStream(MemoryStream &&other) noexcept
+	: Stream(std::move(other)), _buffer{ std::move(other._buffer) }, 
+	_ptr{ other._ptr }, _capacity{ other._capacity }, _length{ other._length }, 
+	_origin{ other._origin }, _expandable{ other._expandable }, _isOpen{ other._isOpen } 
+{
+	other._isOpen = false;
+	other._ptr = nullptr;
+
+}
+
+MemoryStream &MemoryStream::operator=(MemoryStream &&other) noexcept
+{
+	if(this != &other)
+	{
+		Stream::operator=(std::move(other));
+		this->_buffer = std::move(other._buffer);
+		this->_ptr = other._ptr;
+		this->_capacity = other._capacity;
+		this->_length = other._length;
+		this->_origin = other._origin;
+		this->_expandable = other._expandable;
+		this->_isOpen = other._isOpen;
+
+		other._isOpen = false;
+		other._ptr = nullptr;
+	}
+	return *this;
+}
+
 MemoryStream::~MemoryStream()
 {
 	this->_ptr = nullptr;
