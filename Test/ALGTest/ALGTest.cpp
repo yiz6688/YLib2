@@ -57,16 +57,16 @@ void sweepTest2()
     StepSweep step;
 
     //WaveReader reader(R"(D:\wave\testWave\\SPK\\8.wav)");
-    auto readerResult = WaveReader::create(R"(D:\wave\testWave\\SPK\\8.wav)");
+    auto readerResult = WaveReader::open(R"(D:\wave\testWave\\SPK\\8.wav)");
     auto& reader = readerResult.value();
     int num = reader->getFrameCount();
     std::vector<double> data(num);
-    auto res = reader->readSamples64(data.data(), num);
-    if(!res)
-    {
-        std::println("读取文件失败:{}", res.error());
-        return;
-    }
+    auto res = reader->readFloat(data.data(), num);
+    // if(!res)
+    // {
+    //     std::println("读取文件失败:{}", res.error());
+    //     return;
+    // }
 
     step.sweepTest(data, 20000, 20, 10, 10, Octave::OCT12, 0);
 

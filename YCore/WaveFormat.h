@@ -5,10 +5,8 @@
 #include<format>
 #include<memory>
 
-#include<initguid.h>
 #include<Windows.h>
 #include <mmreg.h>
-#include<expected>
 
 #include"BinaryStream.h"
 
@@ -67,7 +65,7 @@ public:
     WaveFormat& operator=(const WaveFormat&) = default;
     WaveFormat& operator=(WaveFormat&&) = default;
 
-    //从流中读取
+    //从流中读取(流应位于 fmt chunk 的 chunkSize 字段处)
     WaveFormat(Stream& reader);
   
 	~WaveFormat() = default;
@@ -78,16 +76,17 @@ public:
    
     std::string toString() const;
         
-    bool operator == (const WaveFormat& fmt);
+    bool operator == (const WaveFormat& fmt) const;
 
-    bool operator !=(const WaveFormat& fmt);
+    bool operator !=(const WaveFormat& fmt) const;
  
 	WAVEFORMATEX toWaveFormatEx() const;
 
-    //纯waveformat的位置读取
-    virtual std::expected<void, std::string> readFormat(Stream* stream, int chunkSize);
+    //纯waveformat的位置读取(流应位于 format 内容的 waveFormatTag 字段处,即 chunkSize 之后)
+    //异常模式: 失败抛出 std::runtime_error
+    virtual void readFormat(Stream* stream, int chunkSize);
 
-    virtual std::expected<void, std::string> writeTo(Stream* stream);
+    virtual void writeTo(Stream* stream);
 
     virtual std::unique_ptr<WaveFormat> clone() const;
 
@@ -116,6 +115,11 @@ public:
 
     int getExtraSize() const { return this->extraSize; }
 
+    //扩展数据(WaveFormatExtraData 的功能已并入基类)
+    std::vector<char>& getExtraData() { return this->extraData; }
+
+    const std::vector<char>& getExtraData() const { return this->extraData; }
+
 protected:
     // 音频格式类型
     unsigned short waveFormatTag;
@@ -129,41 +133,10 @@ protected:
     short blockAlign;
     // 每秒平均字节数
     int bytesPerSec;
+    
     // 扩展大小
     short extraSize{ -1 };
 
-    std::vector<char> extraData;
-};
-
-
-
-/*
-    读取扩展数据的类，
-*/
-class WaveFormatExtraData : public WaveFormat
-{
-
-public:
-    WaveFormatExtraData(const WaveFormatExtraData&) = default;
-    WaveFormatExtraData(WaveFormatExtraData&&) = default;
-
-    WaveFormatExtraData& operator=(const WaveFormatExtraData&) = default;
-    WaveFormatExtraData& operator=(WaveFormatExtraData&&) = default;
-
-    WaveFormatExtraData() = default;
-    WaveFormatExtraData(Stream& stream);
-    ~WaveFormatExtraData() = default;
-
-public:
-
-    std::unique_ptr<WaveFormat> clone() const override;
-
-    std::expected<void, std::string> readFormat(Stream* stream, int chunkSize) override;
-
-    std::expected<void, std::string> writeTo(Stream* stream) override;
-
-    std::vector<char>& getextraData();
-private:
     std::vector<char> extraData;
 };
 
@@ -197,9 +170,9 @@ public:
 public:
     std::unique_ptr<WaveFormat> clone() const override;
 
-    std::expected<void, std::string> readFormat(Stream* stream, int chunkSize) override;
+    void readFormat(Stream* stream, int chunkSize) override;
 
-    std::expected<void, std::string> writeTo(Stream* stream) override;
+    void writeTo(Stream* stream) override;
 
 
 private:
@@ -208,7 +181,3 @@ private:
     GUID subFormat;
 
 };
-
-
-
-

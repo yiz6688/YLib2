@@ -1,106 +1,70 @@
 #pragma once
-#include"Stream.h"
-#include"WaveFormat.h"
-#include<memory>
-#include<vector>
-#include"SampleConv.h"
+#include"WaveStream.h"
+#include"WaveBuffer.h"
 #include"TResult.h"
+#include<memory>
 
-struct RIFFChunk
-{
-	int identifier;
-	int size;
-	int offset;
-};
-
-
+//丰富读层(高层 API): 组合 WaveStream(所有权或使用权), 内置 WaveBuffer 转换桥,
+//支持按浮点(float/double)或原生类型(Sample)精细化读取。
+//资源所有权约定同 WaveStream: unique_ptr 持有所有权, 裸指针持有使用权。
+//创建统一走静态工厂, 返回 TPResult(不抛异常):
+//- open(filepath)                 : 一次性从文件创建(内部创建并持有 WaveStream);
+//- open(WaveStream&)              : 借用已存在的 WaveStream(使用权);
+//- open(unique_ptr<WaveStream>&&) : 转移 WaveStream 所有权。
 class WaveReader
 {
 
 private:
-	 
-	WaveReader(Stream* stream);
+	//借用, 组合已有 WaveStream(使用权)
+	explicit WaveReader(WaveStream& stream, SampleType storageType);
 
-	WaveReader(std::unique_ptr<Stream>&& stream);
-public:
-	virtual ~WaveReader();
-
-
-	std::vector<RIFFChunk>& getExtraChunks();
-
-	std::vector<char> getChunkData(RIFFChunk chunk);
+	//所有权, 持有 WaveStream(转移)
+	explicit WaveReader(std::unique_ptr<WaveStream>&& stream, SampleType storageType);
 
 public:
-	//static TPResult<WaveReader> create(Stream* stream);
-	//static TPResult<WaveReader> create(std::string_view filePath);
+	//读取交织浮点(float/double), 返回读取的采样数(总采样, 含通道)
+	int readFloat(float* buffer, int sampleNum);
+	int readFloat(double* buffer, int sampleNum);
 
-public:
+	//读取交织原始数据(原生类型, Sample 描述缓冲), 返回读取的帧数
+	int readRaw(Sample& sample, int sampleNum);
 
-	std::expected<long, std::string> getPosition();
-	//设置流位置
-	std::expected<void, std::string> setPosition(long value);
+	//读取原始字节(透传到底层 WaveStream, data 区), 返回实际读取的字节数
+	long read(char* buffer, int size, int offset, int count);
+	long read(char* buffer, int size);
 
-	//设置偏移
-	std::expected<long, std::string>  seek(long offset, SeekOrigin origin);
-	//按照时间偏移
-	std::expected<long, std::string> seekTime(long mills, SeekOrigin origin);
-
-	std::expected<void, std::string> setTimePos(long mills);
-
-	std::expected<long, std::string> getTimePos();
-
-
-public:
-	virtual std::expected<long, std::string> readSamples(float* buffer, int nsamples);
-
-	virtual std::expected<long, std::string> readSamples64(double* buffer, int nsamples);
-	
-	virtual std::expected<long, std::string>  read(char* buffer, int size);
-
-	virtual std::expected<long, std::string>  read(char* buffer, int size, int offset, int count);
-
-
+	//基础信息代理
 	const WaveFormat& getWaveFormat() const;
+	long getLength();
+	long getFrameCount();
+	long getTotalMills();
+	int getChannels();
 
-
-	virtual long getLength();
-
-	virtual long getFrameCount();
-
-	virtual long getTotalMills();
-
-private:
-
-	std::expected<void, std::string> readWaveHeader();
-
+	//位置/时间代理
+	long getPosition();
+	long seek(long offset, SeekOrigin origin);
+	long getTimePos();
 
 public:
-	static TPResult<WaveReader> create(std::string_view filepath);
-
-	static TPResult<WaveReader> create(Stream* stream);
-
+	static TPResult<WaveReader> open(std::string_view filepath);
+	static TPResult<WaveReader> open(WaveStream& stream);
+	static TPResult<WaveReader> open(std::unique_ptr<WaveStream>&& stream);
 
 private:
+	template<typename F>
+	int readFloatImpl(F* buffer, int sampleNum);
 
-	std::unique_ptr<Stream> _ptr;
+private:
+	std::unique_ptr<WaveStream> _ptr;   //所有权
 
-	Stream* _stream;
+	WaveStream* _stream;                //使用权
 
-	long _dataPos{ 0 };
+	//内置 WaveBuffer(转换/缓冲桥)
+	std::unique_ptr<WaveBuffer> _wb;
 
-	long _dataSize{ 0 };   //data 块的大小，每次写入后更新
+	//存储类型(由 stream 格式映射)
+	SampleType _storageType;
 
-	std::vector<RIFFChunk> _extraChunks;
-
-	std::unique_ptr<WaveFormat> _fmt;
-
-	//转换缓冲区长度，单位字节
-	const int bufferLen = 4096;
-
-	char convBuffer[4096];
+	//环形区单块帧数
+	int _chunkFrames{ 1024 };
 };
-
-
-
-
-

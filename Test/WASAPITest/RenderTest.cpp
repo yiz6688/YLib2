@@ -35,7 +35,9 @@ int main()
     }
     
     //WaveReader reader(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
-    auto readerResult = WaveReader::create(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
+    auto readerResult = WaveReader::open(R"(d:\wave\Sweep@48k_24bit_mono.wav)");
+
+
 
     auto& reader = readerResult.value();
     // vector<char> buffer;

@@ -16,38 +16,38 @@ Stream::Stream(Stream&& other) noexcept
 	other._seekable = false;
 }
 
-std::expected<long, std::string> Stream::read(char* buffer, int size, int offset, int count)
+long Stream::read(char* buffer, int size, int offset, int count)
 {
 	return this->basic_read(buffer, size, offset, count);
 }
 
-std::expected<long, std::string> Stream::read(char* buffer, int size)
+long Stream::read(char* buffer, int size)
 {
 	return this->basic_read(buffer, size, 0, size);
 }
 
-std::expected<long, std::string> Stream::read(std::vector<char>& vec)
+long Stream::read(std::vector<char>& vec)
 {
 	auto size = vec.size();
 	return this->basic_read(vec.data(), static_cast<int>(size), 0, static_cast<int>(size));
 }
 
-std::expected<long, std::string> Stream::write(const std::string& str)
+long Stream::write(const std::string& str)
 {
 	return this->write(str.data(), static_cast<int>(str.size()));
 }
 
-std::expected<long, std::string> Stream::write(const std::vector<char>& vec)
+long Stream::write(const std::vector<char>& vec)
 {
 	return this->write(vec.data(), static_cast<int>(vec.size()));
 }
 
-std::expected<long, std::string> Stream::write(const char* data, int size, int offset, int count)
+long Stream::write(const char* data, int size, int offset, int count)
 {
 	return this->basic_write(data, size, offset, count);
 }
 
-std::expected<long, std::string> Stream::write(const char* data, int size)
+long Stream::write(const char* data, int size)
 {
 	return this->basic_write(data, size, 0, size);
 }
@@ -65,23 +65,13 @@ void Stream::InternalCopyTo(Stream& stream, int bufferSize)
 	}
 	//使用 vector 管理缓冲区，避免手动 new/delete 可能引发的内存泄漏
 	std::vector<char> array(static_cast<size_t>(bufferSize));
-	long count;
 	while (true)
 	{
-		auto result = this->read(array.data(), bufferSize);
-		if (!result)
-		{
-			return;
-		}
-		count = result.value();
+		long count = this->read(array.data(), bufferSize);  //失败抛出异常
 		if (count == 0)
 		{
 			return;
 		}
-		auto writeResult = stream.write(array.data(), static_cast<int>(count));
-		if (!writeResult)
-		{
-			return;
-		}
+		stream.write(array.data(), static_cast<int>(count));
 	}
 }

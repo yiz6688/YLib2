@@ -1,101 +1,73 @@
 #pragma once
-#include"Stream.h"
-#include"WaveFormat.h"
-#include"SampleConv.h"
-#include<memory>
+#include"WaveStream.h"
+#include"WaveBuffer.h"
 #include"TResult.h"
+#include<memory>
 
+//丰富写层(高层 API): 组合 WaveStream(所有权或使用权), 内置 WaveBuffer 转换桥,
+//支持按浮点(float/double)或原生类型(Sample)精细化写入。
+//资源所有权约定同 WaveStream: unique_ptr 持有所有权, 裸指针持有使用权。
+//创建统一走静态工厂, 返回 TPResult(不抛异常):
+//- create(format, filepath)                 : 一次性从文件创建(内部创建并持有 WaveStream);
+//- create(WaveStream&)                      : 借用已存在的 WaveStream(使用权);
+//- create(unique_ptr<WaveStream>&&)         : 转移 WaveStream 所有权。
 class WaveWriter
 {
 
-
 private:
-	WaveWriter(const WaveFormat& _waveFormat, Stream* stream);
+	//借用, 组合已有 WaveStream(使用权)
+	WaveWriter(WaveStream& stream, SampleType storageType);
 
-	WaveWriter(const WaveFormat& _waveFormat, TPtr<Stream>&& stream);
-
-public:	
-	virtual ~WaveWriter();
+	//所有权, 持有 WaveStream(转移)
+	WaveWriter(std::unique_ptr<WaveStream>&& stream, SampleType storageType);
 
 public:
-	//static TPResult<WaveWriter> create(const WaveFormat& fmt, Stream* stream);
-	
-	//static TPResult<WaveWriter> create(const WaveFormat& fmt, std::string_view filepath);
+	//写入交织浮点(float/double), 返回写入的采样数(总采样, 含通道)
+	int writeFloat(float* buffer, int sampleNum);
+	int writeFloat(double* buffer, int sampleNum);
 
+	//写入交织原始数据(原生类型, Sample 描述缓冲), 返回写入的帧数
+	int writeRaw(Sample& sample, int sampleNum);
 
-	virtual std::expected<long, std::string> write(char* buffer, int size, int offset, int count);
+	//写入原始字节(透传到底层 WaveStream, data 区), 返回实际写入的字节数
+	long write(char* buffer, int size, int offset, int count);
+	long write(char* buffer, int size);
 
-	virtual std::expected<long, std::string> write(char* buffer, int count);
-
-	template<typename T>
-	std::expected<long, std::string> write(T* buffer, int nsamples)
-	{
-		if (sizeof(T) * 8 != this->_fmt->getBitsPerSample())
-		{
-			return std::unexpected{ "写入块没有对齐" };
-		}
-
-		char* ptr = reinterpret_cast<char*>(buffer);
-		return this->write(ptr, nsamples * sizeof(T)); 
-	}
-
-	//写浮点数
-	std::expected<long, std::string> writeSamples(float* buffer, int nsamples);
-	
-	std::expected<long, std::string> writeSample(float value);
-
-	std::expected<long, std::string> getPosition();
-	//设置流位置
-	std::expected<void, std::string> setPosition(long value);
-	
-	//设置偏移
-	std::expected<long, std::string>  seek(long offset, SeekOrigin origin);
-	//按照时间偏移
-	std::expected<long, std::string> seekTime(long mills, SeekOrigin origin);
-
-	std::expected<void, std::string> setTimePos(long mills);
-	
-	std::expected<long, std::string> getTimePos();
-
-	virtual std::expected<void, std::string> flush();
-
-
+	//基础信息代理
+	const WaveFormat& getWaveFormat() const;
 	long getLength();
-
+	long getFrameCount();
 	long getTotalMills();
+	int getChannels();
 
-	const WaveFormat& getWaveFormat();
+	//刷新(更新文件头并落盘), 失败抛出异常
+	void flush();
 
-private:
-	std::expected<void, std::string> writeWaveHeader();
-
-
-protected:
-	
-
-	virtual std::expected<void, std::string> updateHeader();
+	//位置/时间代理
+	long getPosition();
+	long seek(long offset, SeekOrigin origin);
+	long getTimePos();
 
 public:
-	static TPResult<WaveWriter> create(const WaveFormat& _waveFormat, std::string_view filepath);
+	static TPResult<WaveWriter> create(const WaveFormat& waveFormat, std::string_view filepath);
+	static TPResult<WaveWriter> create(WaveStream& stream);
+	static TPResult<WaveWriter> create(std::unique_ptr<WaveStream>&& stream);
 
-	static TPResult<WaveWriter> create(const WaveFormat& _waveFormat, Stream* stream);
+private:
+	template<typename F>
+	int writeFloatImpl(F* buffer, int sampleNum);
 
-protected:
-	
-	std::unique_ptr<Stream> _ptr;
+private:
+	std::unique_ptr<WaveStream> _ptr;   //所有权
 
-	Stream* _stream;
+	WaveStream* _stream;                //使用权
 
-	long _dataPos{ 0 };
+	//内置 WaveBuffer(转换/缓冲桥)
+	std::unique_ptr<WaveBuffer> _wb;
 
-	long _dataSize{ 0 };
+	//存储类型(由 stream 格式映射)
+	SampleType _storageType;
 
-	//转换缓冲区长度，单位字节
-	const int bufferLen = 4096;
-
-	char convBuffer[4096];
-
-	std::unique_ptr<WaveFormat> _fmt;
-
-
+	//环形区单块帧数
+	int _chunkFrames{ 1024 };
 };

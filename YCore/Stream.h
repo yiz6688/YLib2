@@ -1,7 +1,7 @@
 #pragma once
 #include<string>
 #include<vector>
-#include<expected>
+#include<stdexcept>
 
 enum class SeekOrigin
 {
@@ -14,7 +14,6 @@ enum class SeekOrigin
 
 class Stream
 {
-
 
 public:
 	Stream();
@@ -30,16 +29,17 @@ public:
 	virtual ~Stream() = default;
 
 public:
-	virtual std::expected<void, std::string> close() = 0;
+	//异常模式: 失败抛出 std::runtime_error, 成功返回裸值
+	virtual void close() = 0;
 	//获取流长度
-	virtual std::expected<long, std::string> getLength() = 0;
+	virtual long getLength() = 0;
 
-	virtual std::expected<void, std::string> setLength(long length) = 0;
+	virtual void setLength(long length) = 0;
 
 	//获取流当前的位置
-	virtual  std::expected<long, std::string> getPosition() = 0;
+	virtual long getPosition() = 0;
 	//设置流的位置
-	virtual std::expected<void, std::string> setPosition(long position) = 0;
+	virtual void setPosition(long position) = 0;
 
 	virtual bool canRead()
 	{
@@ -56,33 +56,33 @@ public:
 		return this->_seekable;
 	}
 	//将缓冲区内容写入基础设备
-	virtual std::expected<void, std::string> flush() = 0;
+	virtual void flush() = 0;
 	//设置流的位置，根据origin参数，偏移offset个字节
-	virtual  std::expected<long, std::string> seek(long offset, SeekOrigin origin) = 0;
+	virtual long seek(long offset, SeekOrigin origin) = 0;
 
 
 	//读取流内容到缓冲区，返回实际读取的字节数
-	std::expected<long, std::string> read(char* buffer, int size, int offset, int count);
+	long read(char* buffer, int size, int offset, int count);
 	//读取流内容到缓冲区，返回实际读取的字节数
-	std::expected<long, std::string> read(char* buffer, int size);
+	long read(char* buffer, int size);
 
-	std::expected<long, std::string> read(std::vector<char>& vec);
+	long read(std::vector<char>& vec);
 
 
-	std::expected<long, std::string> write(const std::string& str);
+	long write(const std::string& str);
 
-	std::expected<long, std::string> write(const std::vector<char>& vec);
+	long write(const std::vector<char>& vec);
 	//将缓冲区内容写入流，返回实际写入的字节数
-	std::expected<long, std::string> write(const char* data, int size, int offset, int count);
+	long write(const char* data, int size, int offset, int count);
 	//将缓冲区内容写入流，返回实际写入的字节数
-	std::expected<long, std::string> write(const char* data, int size);
+	long write(const char* data, int size);
 
 protected:
 	//c++重载后，同名函数就不显示了，设计两个基本的读写函数，其余的调用这两个函数。
 	//基本写方法
-	virtual  std::expected<long, std::string> basic_write(const char* data, int size, int offset, int count) = 0;
+	virtual long basic_write(const char* data, int size, int offset, int count) = 0;
 	//基本读方法
-	virtual  std::expected<long, std::string> basic_read(char* buffer, int size, int offset, int count) = 0;
+	virtual long basic_read(char* buffer, int size, int offset, int count) = 0;
 
 	void copyTo(Stream& stream);
 

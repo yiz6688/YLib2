@@ -1,548 +1,235 @@
-#include<memory>
-#include"BitConverter.h"
-#include"BinaryStream.h"
-#include"SampleConv.h"
-#include<chrono>
-#include "WaveReader.h"
+﻿#include"WaveReader.h"
 #include"FileStream.h"
+#include<stdexcept>
 
-using namespace std;
-
-const int rf64ChunkId = BitConverter::Converter<int>("RF64").value();
-const int riffChunkId = BitConverter::Converter<int>("RIFF").value();
-const int waveChunkId = BitConverter::Converter<int>("WAVE").value();
-const int dataChunkId = BitConverter::Converter<int>("data").value();
-const int formatChunkId = BitConverter::Converter<int>("fmt ").value();
-
-//检查返回值如果失败返回错误
-#define CHECK_RESULT(result) if (!result) { return std::unexpected{ result.error() }; }
-
-class WaveChunkReader
+//根据格式映射到 WaveBuffer 使用的 SampleType
+static bool formatToSampleType(const WaveFormat& fmt, SampleType& out)
 {
-
-public:
-	WaveChunkReader()
+	auto enc = fmt.getEncoding();
+	int bits = fmt.getBitsPerSample();
+	if (enc == WaveFormatEncoding::IeeeFloat)
 	{
+		if (bits == 32) { out = SampleType::IEEE32; return true; }
+		if (bits == 64) { out = SampleType::IEEE64; return true; }
+		return false;
 	}
-
-	~WaveChunkReader()
-	{
-	}
-
-
-	expected<void, string> ReadWaveHeader(Stream* stream)
-	{
-		auto result = stream->getPosition();
-		if (!result)
-		{
-			return std::unexpected(result.error());
-		}
-		long position = result.value(); //当前所在位置
-		
-		result = stream->getLength();
-		if(!result)
-		{
-			return std::unexpected(result.error());
-		}
-		long size = result.value(); //流总长度
-		long remainSize = size - position; //剩余长度
-
-
-
-		bool fmtchunkFlag = false;  //是否读取到format chunk的标志
-		BinaryStream bs(stream);
-		
-		//检查RIFF头
-		auto riffID = bs.readInt32();
-		if (!riffID)
-		{
-			return std::unexpected(riffID.error());
-		}
-		if (riffID.value() != riffChunkId)
-		{
-			return unexpected("Not a WAVE file - no RIFF header");
-		}
-
-		auto riffSize = bs.readInt32();
-		if (!riffSize)
-		{
-			return std::unexpected(riffSize.error());
-		}
-		this->_riffSize = riffSize.value();
-
-		//检查WAVE头
-		auto waveID = bs.readInt32();
-		if (!waveID)
-		{
-			return unexpected(waveID.error());
-		}
-		if (waveID.value() != waveChunkId)
-		{
-			return std::unexpected("Not a WAVE file - no WAVE header");
-		}
-
-		long endpos = std::min<long>(this->_riffSize + 8, remainSize);  //取两者小的
-
-
-		result = stream->getPosition();
-		if (!result)
-		{
-			return std::unexpected(result.error());
-		}
-		position = result.value();
-
-		while (position  <= endpos - 8)
-		{
-			result = bs.readInt32();
-			if (!result)
-			{
-				return std::unexpected(result.error());
-			}
-			long chunkID = result.value();
-
-			result = bs.readInt32();
-			if (!result)
-			{
-				return std::unexpected(result.error());
-			}
-			long chunkSize = result.value();
-
-			if (chunkID == dataChunkId)
-			{
-				this->_dataPos = position;
-				//this->_dataSize = chunkSize;
-				this->_dataSize = std::min<long>(chunkSize, size - position);  //如果chunkSize超过剩余长度，说明文件损坏了，取剩余长度
-
-				if (fmtchunkFlag == false)
-				{
-					return std::unexpected("Invalid WAV file - fmt chunk must be before data chunk");
-				}
-
-				auto nn = this->_fmt->getBlockAlign();
-				this->_dataSize -= (this->_dataSize % nn);  //对齐采样块
-				
-
-				//移动指针到下一个chunk
-				result = stream->seek(chunkSize, SeekOrigin::Current);
-				if (!result)
-				{
-					return std::unexpected(result.error());
-				}
-				position = result.value();
-			}
-			else if (chunkID == formatChunkId)
-			{
-				if (chunkSize > INT32_MAX)
-				{
-					return std::unexpected("Format chunk length must be between 0 and intmax");
-				}
-				//获取waveformat,这里不用移动了,下面的读取会自动移动指针
-				this->_fmt = WaveFormat::fromFormatChunk(*stream, chunkSize); 
-				fmtchunkFlag = true;
-				result = stream->getPosition();
-				if (!result)
-				{
-					return std::unexpected(result.error());
-				}
-				position = result.value();
-				continue;
-			}
-			else
-			{
-				if (chunkSize > size - position)
-				{
-					//如果chunkSize超过剩余长度，说明文件损坏了
-					break;
-				}
-				
-				if (chunkSize > INT32_MAX)
-				{
-					return std::unexpected("RIFFChunk chunk length must be between 0 and intmax");
-				}
-				this->_riffLst.emplace_back(RIFFChunk{ chunkID, chunkSize, position });
-				//移动指针到下一个chunk
-				result = stream->seek(chunkSize, SeekOrigin::Current);
-				if (!result)
-				{
-					return std::unexpected(result.error());
-				}
-				position = result.value();
-			}
-
-		}
-
-
-		if (fmtchunkFlag == false)
-		{
-			return std::unexpected("Invalid WAV file - No fmt chunk found");
-		}
-
-		if (this->_dataPos == 0)
-		{
-			return std::unexpected("Invalid WAV file - No data chunk found");
-		}
-
-		return {};
-	}
-
-public:
-
-	std::unique_ptr<WaveFormat> _fmt;
-	
-	long _riffSize{ 0 };
-
-	long _dataPos{ 0 };
-
-	long _dataSize{ 0 };
-
-	vector<RIFFChunk> _riffLst{};
-};
-
-
-
-WaveReader::WaveReader(Stream* stream)
-	:_ptr{nullptr}, _stream(stream),  _dataPos{0}, _dataSize{0}
-{
-	auto result = this->readWaveHeader();
-	if (!result)
-	{
-		throw std::runtime_error(result.error());
-	}
+	if (bits == 16) { out = SampleType::INT16; return true; }
+	if (bits == 24) { out = SampleType::INT24; return true; }
+	if (bits == 32) { out = SampleType::INT32; return true; }
+	return false;
 }
 
-WaveReader::WaveReader(std::unique_ptr<Stream>&& stream)
-	:_ptr{ std::move(stream) }, _stream(_ptr.get())
-	, _dataPos{ 0 }, _dataSize{ 0 }
+WaveReader::WaveReader(WaveStream& stream, SampleType storageType)
+	: _ptr{ nullptr }, _stream(&stream), _storageType{ storageType }
 {
-
-	auto result = this->readWaveHeader();
-	if (!result)
-	{
-		throw std::runtime_error(result.error());
-	}
+	this->_wb = std::make_unique<WaveBuffer>(this->_storageType,
+		this->_chunkFrames + 4, stream.getWaveFormat().getChannels());
 }
 
-WaveReader::~WaveReader()
-{}
-
-std::vector<RIFFChunk>& WaveReader::getExtraChunks()
+WaveReader::WaveReader(std::unique_ptr<WaveStream>&& stream, SampleType storageType)
+	: _ptr{ std::move(stream) }, _stream(_ptr.get()), _storageType{ storageType }
 {
-	return this->_extraChunks;
+	this->_wb = std::make_unique<WaveBuffer>(this->_storageType,
+		this->_chunkFrames + 4, this->_stream->getWaveFormat().getChannels());
 }
 
-std::vector<char> WaveReader::getChunkData(RIFFChunk chunk)
+//统一的交织浮点读取: 从 stream 读原始字节进 WaveBuffer 环形区 -> readFloat 转换输出
+template<typename F>
+int WaveReader::readFloatImpl(F* buffer, int sampleNum)
 {
-	std::vector<char> data(chunk.size);
-	auto result = this->setPosition(chunk.offset);  //后续处理，先按异常抛
-	if (!result)
-	{
-		throw std::runtime_error(result.error());
-	}
-	auto ret = this->_stream->read(data);
-	if (!ret)
-	{
-		throw std::runtime_error(ret.error());
-	}
-	return data;
-}
-
-std::expected<long, std::string> WaveReader::getPosition()
-{
-	return this->_stream->getPosition().value() - this->_dataPos - 8;
-}
-
-std::expected<void, std::string> WaveReader::setPosition(long value)
-{
-	auto len = this->_stream->getLength();
-
-	if (value > len.value())
-	{
-		value = len.value();
-	}
-	value -= (value % this->_fmt->getBlockAlign());  //对齐采样块
-
-	return this->_stream->setPosition(value + this->_dataPos + 8);
-}
-
-std::expected<long, std::string> WaveReader::seek(long offset, SeekOrigin origin)
-{
-	auto pos = this->_stream->getPosition(); CHECK_RESULT(pos);
-	auto len = this->_stream->getLength();   CHECK_RESULT(len);
-
-	if (origin == SeekOrigin::Current)
-	{
-		offset += pos.value();
-	}
-	else if (origin == SeekOrigin::End)
-	{
-		offset = len.value() + offset;
-	}
-
-	auto result = this->setPosition(offset); CHECK_RESULT(result);
-
-	return this->getPosition();
-}
-
-std::expected<long, std::string> WaveReader::seekTime(long mills, SeekOrigin origin)
-{
-	auto bytes = this->_fmt->mills2Bytes(mills);
-	return this->seek(bytes, origin);
-}
-
-std::expected<void, std::string> WaveReader::setTimePos(long mills)
-{
-	long bytes = this->_fmt->mills2Bytes(mills);
-	return this->setPosition(bytes);
-}
-
-std::expected<long, std::string> WaveReader::getTimePos()
-{
-	auto pos = this->getPosition(); CHECK_RESULT(pos);
-	if (!pos)
-	{
-		return pos;
-	}
-	return this->_fmt->bytes2Mills(pos.value());
-}
-
-std::expected<long, std::string> WaveReader::readSamples(float* buffer, int nsamples)
-{
-	int nBytes = this->_fmt->getBlockAlign() / this->_fmt->getChannels();
-	int nret = 0;
-	int rdLen = 0;
-	int start = 0;
-	long readSamples = 0;
-	if (this->_fmt->getEncoding() == WaveFormatEncoding::IeeeFloat)
-	{
-		char* ptr = reinterpret_cast<char*>(buffer);
-		nret = this->_stream->read(ptr, nsamples * 4).value();   //指向调用，预防子类重写后循环调用
-		readSamples = nret / 4;
-		return readSamples;
-	}
-
-	int nSample = 0;
-	if (nBytes == 2)
-	{
-		float* ptr = buffer;
-		auto len = this->bufferLen / 2;  //缓冲区有效长度
-		short* sptr = reinterpret_cast<short*>(this->convBuffer);  //转换缓冲区
-		rdLen = len;
-		for (start = 0; start < nsamples; start += len)
-		{
-			ptr = buffer + readSamples;
-			if (start + rdLen >= nsamples)
-			{
-				rdLen = nsamples - start;
-			}
-
-			auto result = this->_stream->read(this->convBuffer, rdLen * 2);   //指向调用，预防子类重写后循环调用
-			CHECK_RESULT(result);
-			nSample = result.value() / 2;
-			SampleConv::Int16toFloat(sptr, nSample, ptr);
-			
-			readSamples += nSample;
-		};
-		return readSamples;
-	}
-	else if (nBytes == 3)
-	{
-		float* ptr = buffer;
-		auto len = this->bufferLen / 3;  //缓冲区有效长度
-		rdLen = len;
-		for (start = 0; start < nsamples; start += len)
-		{
-			ptr = buffer + readSamples;
-			if (start + rdLen >= nsamples)
-			{
-				rdLen = nsamples - start;
-			}
-
-			auto result = this->_stream->read(this->convBuffer, rdLen * 3);   //指向调用，预防子类重写后循环调用
-			CHECK_RESULT(result);
-			nSample = result.value() / 3;
-			SampleConv::Int24BytetoFloat(this->convBuffer, nSample, ptr);
-
-			readSamples += result.value() / 3;
-		};
-		return readSamples;
-	}
-	else if (nBytes == 4)
-	{
-		float* ptr = buffer;
-		auto len = this->bufferLen / 4;  //缓冲区有效长度
-		int* iptr = reinterpret_cast<int*>(this->convBuffer);  //转换缓冲区
-		rdLen = len;
-		for (start = 0; start < nsamples; start += len)
-		{
-			ptr = buffer + readSamples;
-			if (start + rdLen >= nsamples)
-			{
-				rdLen = nsamples - start;
-			}
-
-			auto result = this->_stream->read(this->convBuffer, rdLen * 4);   //指向调用，预防子类重写后循环调用
-			CHECK_RESULT(result);
-			nSample = result.value() / 4;
-			SampleConv::Int32toFloat(iptr, nSample, ptr);
-
-			readSamples += nSample;
-		};
-		return readSamples;
-	}
-	else
-	{
-		throw std::logic_error("暂不支持的格式");
-	}
-	return 0;
-
-}
-
-std::expected<long, std::string> WaveReader::readSamples64(double *buffer, int nsamples)
-{
-	int nBytes = this->_fmt->getBlockAlign() / this->_fmt->getChannels();
-	int nret = 0;
-	int rdLen = 0;
-	int start = 0;
-	long readSamples = 0;
-	
-	int nSample = 0;
-	if (nBytes == 2)
-	{
-		double* ptr = buffer;
-		auto len = this->bufferLen / 2;  //缓冲区有效长度
-		short* sptr = reinterpret_cast<short*>(this->convBuffer);  //转换缓冲区
-		rdLen = len;
-		for (start = 0; start < nsamples; start += len)
-		{
-			ptr = buffer + readSamples;
-			if (start + rdLen >= nsamples)
-			{
-				rdLen = nsamples - start;
-			}
-
-			auto result = this->_stream->read(this->convBuffer, rdLen * 2);   //指向调用，预防子类重写后循环调用
-			CHECK_RESULT(result);
-			nSample = result.value() / 2;
-			SampleConv::IntToDouble(sptr, nSample, ptr);
-			
-			readSamples += nSample;
-		};
-		return readSamples;
-	}
-	else if (nBytes == 4)
-	{
-		double* ptr = buffer;
-		auto len = this->bufferLen / 4;  //缓冲区有效长度
-		int* iptr = reinterpret_cast<int*>(this->convBuffer);  //转换缓冲区
-		rdLen = len;
-		for (start = 0; start < nsamples; start += len)
-		{
-			ptr = buffer + readSamples;
-			if (start + rdLen >= nsamples)
-			{
-				rdLen = nsamples - start;
-			}
-
-			auto result = this->_stream->read(this->convBuffer, rdLen * 4);   //指向调用，预防子类重写后循环调用
-			CHECK_RESULT(result);
-			nSample = result.value() / 4;
-			SampleConv::IntToDouble(iptr, nSample, ptr);
-
-			readSamples += nSample;
-		};
-		return readSamples;
-	}
-	else
-	{
-		throw std::logic_error("暂不支持的格式");
-	}
-	return 0;
-
-}
-
-std::expected<long, std::string>  WaveReader::read(char* buffer, int size)
-{
-	return this->read(buffer, size, 0, size);
-}
-
-std::expected<long, std::string>  WaveReader::read(char* buffer, int size, int offset, int count)
-{
-	if (offset < 0 || size < 0 || count < 0 || offset > size - count)
-	{
-		return std::unexpected("输入参数不合法");
-	}
-	if (count == 0)
+	if (buffer == nullptr || sampleNum <= 0 || this->_wb == nullptr)
 	{
 		return 0;
 	}
-	auto result = this->getPosition(); CHECK_RESULT(result);
-	auto value = this->_dataSize - result.value();
-	if (value <= 0)
+	const int channels = this->_stream->getWaveFormat().getChannels();
+	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
+	if (channels <= 0 || frameSize <= 0)
 	{
 		return 0;
 	}
-	
-	if (value > count)
-	{
-		value = count;
-	}
+	int bytesPerSample = frameSize / channels;
 
-	return this->_stream->read(buffer + offset, static_cast<int>(value));
+	long doneFloats = 0;
+	while (doneFloats < sampleNum)
+	{
+		//剩余可读字节(限制在 data 块内)
+		long avail = this->_stream->getLength() - this->_stream->getPosition();
+		if (avail <= 0)
+		{
+			break;
+		}
+		long remain = (sampleNum - doneFloats) * bytesPerSample;
+		if (avail > remain)
+		{
+			avail = remain;
+		}
+		//借用 getWriteBuffer 锁定环形区, 直接把 stream 数据读入, 用完整体释放
+		int perCh = static_cast<int>(avail / channels);
+		auto sp = this->_wb->getWriteBuffer(perCh);
+		if (sp.size() == 0)
+		{
+			break;
+		}
+		long rr = this->_stream->read(sp.data(), static_cast<int>(sp.size()));  //失败抛出异常
+		this->_wb->releaseWriteBuffer();
+		int gotFloats = static_cast<int>(rr) / bytesPerSample;
+		if (gotFloats <= 0)
+		{
+			break;
+		}
+		int f = this->_wb->readFloat(buffer + doneFloats, gotFloats);
+		if (f <= 0)
+		{
+			break;
+		}
+		doneFloats += f;
+	}
+	return static_cast<int>(doneFloats);
+}
+
+int WaveReader::readFloat(float* buffer, int sampleNum)
+{
+	return this->readFloatImpl(buffer, sampleNum);
+}
+
+int WaveReader::readFloat(double* buffer, int sampleNum)
+{
+	return this->readFloatImpl(buffer, sampleNum);
+}
+
+//原生类型交织读取: 直接读原始字节到 sample.raw
+int WaveReader::readRaw(Sample& sample, int sampleNum)
+{
+	if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
+	{
+		return 0;
+	}
+	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
+	long rr = this->_stream->read(sample.raw, sampleNum * frameSize);  //失败抛出异常
+	return static_cast<int>(rr) / frameSize;
+}
+
+//读取原始字节(透传到底层 WaveStream), 失败抛出异常
+long WaveReader::read(char* buffer, int size, int offset, int count)
+{
+	return this->_stream->read(buffer, size, offset, count);
+}
+
+long WaveReader::read(char* buffer, int size)
+{
+	return this->_stream->read(buffer, size);
 }
 
 const WaveFormat& WaveReader::getWaveFormat() const
 {
-	return *(this->_fmt);
+	return this->_stream->getWaveFormat();
 }
 
 long WaveReader::getLength()
 {
-	return this->_dataSize;
+	return this->_stream->getLength();
 }
 
 long WaveReader::getFrameCount()
 {
-	return this->_dataSize / this->_fmt->getBlockAlign();
+	return this->_stream->getFrameCount();
 }
 
 long WaveReader::getTotalMills()
 {
-	return this->_dataSize * 1000 / this->_fmt->getBytesPerSec();
+	return this->_stream->getTotalMills();
 }
 
-std::expected<void, std::string> WaveReader::readWaveHeader()
+int WaveReader::getChannels()
 {
-	WaveChunkReader chunkReader;
-	auto result = chunkReader.ReadWaveHeader(this->_stream);
-	CHECK_RESULT(result);
-
-	this->_fmt = std::move(chunkReader._fmt);
-	this->_dataPos = chunkReader._dataPos;
-	this->_dataSize = chunkReader._dataSize;
-	this->_extraChunks = std::move(chunkReader._riffLst);
-	result = this->setPosition(0);  //设置到wav起始位置
-	CHECK_RESULT(result);
-
-	return {};
+	return this->_stream->getChannels();
 }
 
-TPResult<WaveReader> WaveReader::create(std::string_view filepath)
+long WaveReader::getPosition()
 {
-    auto fsResult = FileStream::create(filepath, FileMode::Open, FileAccess::Read);
-	if(!fsResult)
+	return this->_stream->getPosition();
+}
+
+long WaveReader::seek(long offset, SeekOrigin origin)
+{
+	return this->_stream->seek(offset, origin);
+}
+
+long WaveReader::getTimePos()
+{
+	return this->_stream->getTimePos();
+}
+
+//一次性从文件创建(内部创建并持有 WaveStream), 工厂: 失败转 expected
+TPResult<WaveReader> WaveReader::open(std::string_view filepath)
+{
+	try
 	{
-		return make_err<WaveReader>(fsResult.error());
+		auto ws = WaveStream::open(filepath);
+		if (!ws)
+		{
+			return make_err<WaveReader>(ws.error());
+		}
+
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType((*ws)->getWaveFormat(), st) || (*ws)->getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveReader>("暂不支持的格式");
+		}
+
+		TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(std::move(ws.value()), st));
+
+		return ptr;
 	}
-
-	TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(std::move(fsResult.value())));
-
-	return ptr;
-
+	catch (const std::exception& e)
+	{
+		return make_err<WaveReader>(e.what());
+	}
 }
 
-TPResult<WaveReader> WaveReader::create(Stream *stream)
+//借用已存在的 WaveStream(使用权), 工厂: 失败转 expected
+TPResult<WaveReader> WaveReader::open(WaveStream& stream)
 {
-    TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(stream));
-	
-    return ptr;
+	try
+	{
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType(stream.getWaveFormat(), st) || stream.getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveReader>("暂不支持的格式");
+		}
+
+		TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(stream, st));
+
+		return ptr;
+	}
+	catch (const std::exception& e)
+	{
+		return make_err<WaveReader>(e.what());
+	}
+}
+
+//转移 WaveStream 所有权, 工厂: 失败转 expected
+TPResult<WaveReader> WaveReader::open(std::unique_ptr<WaveStream>&& stream)
+{
+	try
+	{
+		if (!stream)
+		{
+			return make_err<WaveReader>("空 WaveStream");
+		}
+
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType(stream->getWaveFormat(), st) || stream->getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveReader>("暂不支持的格式");
+		}
+
+		TPtr<WaveReader> ptr = TPtr<WaveReader>(new WaveReader(std::move(stream), st));
+
+		return ptr;
+	}
+	catch (const std::exception& e)
+	{
+		return make_err<WaveReader>(e.what());
+	}
 }

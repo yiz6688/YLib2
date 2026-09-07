@@ -73,52 +73,53 @@ public:
 
 	~FileStream();
 
-	std::expected<void, std::string> close() override;
+	//异常模式: 失败抛出 std::runtime_error
+	void close() override;
 
-	std::expected<void, std::string> setLength(long value) override;
+	void setLength(long value) override;
 
-	std::expected<long, std::string> getLength() override;
+	long getLength() override;
 
-	std::expected<long, std::string> getPosition() override;
+	long getPosition() override;
 
-	std::expected<void, std::string> setPosition(long value) override;
+	void setPosition(long value) override;
 
-	std::expected<void, std::string> flush() override;
+	void flush() override;
 
-	std::expected<void, std::string> flush(bool flushToDisk);
+	void flush(bool flushToDisk);
 
-	std::expected<long, std::string>  seek(long offset, SeekOrigin origin) override;
+	long seek(long offset, SeekOrigin origin) override;
 
 protected:
-	std::expected<long, std::string> basic_read(char* data, int size, int offset, int count) override;
+	long basic_read(char* data, int size, int offset, int count) override;
 
-	std::expected<long, std::string> basic_write(const  char* data, int size, int offset, int count) override;
+	long basic_write(const  char* data, int size, int offset, int count) override;
 
 
 
 
 private:
-	std::expected<void, std::string> flushRead();
+	void flushRead();
 
-	std::expected<long, std::string> flushWrite();
+	long flushWrite();
 
-	std::expected<long, std::string> writeCore(const char* data, int size, int offset, int count);
+	long writeCore(const char* data, int size, int offset, int count);
 
-	std::expected<long, std::string> readCore(char* data, int size, int offset, int count);
+	long readCore(char* data, int size, int offset, int count);
 
-	std::expected<long, std::string> seekCore(long offset, SeekOrigin origin);
-
-public:
-	std::expected<void, std::string> init();
+	long seekCore(long offset, SeekOrigin origin);
 
 public:
-	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+	void init();
+
+public:
+	static TPtr<FileStream> create(std::string_view filepath, FileMode fileMode, 
 		FileAccess fileAccess, FileShare fileShare, int bufferSize);
 
-	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+	static TPtr<FileStream> create(std::string_view filepath, FileMode fileMode, 
 		FileAccess fileAccess, FileShare fileShare);
 
-	static TPResult<FileStream> create(std::string_view filepath, FileMode fileMode, 
+	static TPtr<FileStream> create(std::string_view filepath, FileMode fileMode, 
 		FileAccess fileAccess);
 
 

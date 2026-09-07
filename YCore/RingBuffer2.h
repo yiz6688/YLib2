@@ -270,6 +270,8 @@ public:
         auto wpos = this->write_pos.load(std::memory_order_relaxed);
         auto writePos = wpos & this->_mask;  //相当于求余
         auto wptr = this->_ptr + writePos;  //写指针起始位置。
+        //对齐到 gap(真正的基本量): gap 是位置/容量/可读写量的基准, 需求空间按 gap 对齐才有意义
+        size = (size / this->_gap) * this->_gap;
 
         if(size == 0 || this->write_lock_len != 0)
         {
@@ -293,6 +295,8 @@ public:
             this->write_lock_len = tailBytes;
         }
 
+        //write_lock_len 本身是 T 槽位(元素)数: 位置/容量/可读写量均以 T 为单位,
+        //span<T> 计数直接用, 不要再除 sizeof(T)(T=int 会小 4 倍)
         return std::span<T>(wptr, this->write_lock_len);
     }
 
@@ -305,6 +309,8 @@ public:
         {
             size = this->write_lock_len;
         }
+        //对齐到 gap: 锁定区本身是 gap 倍数, 释放量按 gap 对齐保持一致
+        size = (size / this->_gap) * this->_gap;
 
         if(size > this->write_lock_len)
         {
@@ -325,6 +331,7 @@ public:
 
         this->write_lock_len -= releaseSize;
         this->write_pos.store(wpos, std::memory_order_release);
+        //releaseSize 已是 T 元素数, 直接返回
         return releaseSize;
     }
 
@@ -339,6 +346,8 @@ public:
 
         auto readPos = rpos & this->_mask;  //相当于求余
         auto rptr = this->_ptr + readPos;  //写指针起始位置。
+        //对齐到 gap(真正的基本量)
+        size = (size / this->_gap) * this->_gap;
 
         if(size == 0 || this->read_lock_len != 0)
         {
@@ -362,6 +371,7 @@ public:
             this->read_lock_len = tailBytes;
         }
 
+        //read_lock_len 本身是 T 槽位(元素)数, span<T> 计数直接用
         return std::span<T>(rptr, this->read_lock_len);
     }
 
@@ -374,6 +384,8 @@ public:
         {
             size = this->read_lock_len;
         }
+        //对齐到 gap
+        size = (size / this->_gap) * this->_gap;
         //这里必定不会产生回绕
         auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
@@ -387,6 +399,7 @@ public:
         this->read_lock_len -= releaseSize;
 
         this->read_pos.store(rpos, std::memory_order_release);
+        //releaseSize 已是 T 元素数, 直接返回
         return releaseSize;
     }
 

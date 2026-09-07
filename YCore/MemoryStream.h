@@ -11,38 +11,34 @@ public:
 
 	MemoryStream(char* data, int dataLen, int offset, int count, bool visiable = false);
 
-	MemoryStream(MemoryStream&& other) noexcept;
-
-	MemoryStream& operator=(MemoryStream&& other) noexcept;
-
 	~MemoryStream();
 
-	std::expected<long, std::string> getLength() override;
+	long getLength() override;
 
-	std::expected<void, std::string> setLength(long value) override;
+	void setLength(long value) override;
 
-	std::expected<long, std::string> getPosition() override;
+	long getPosition() override;
 
-	std::expected<void, std::string> setPosition(long position) override;
+	void setPosition(long position) override;
 
 	long getCapacity();
 
-	std::expected<long, std::string> setCapacity(long value);
+	long setCapacity(long value);
 
-	std::expected<void, std::string> flush() override;
+	void flush() override;
 
-	std::expected<long, std::string>  seek(long offset, SeekOrigin origin) override;
+	long seek(long offset, SeekOrigin origin) override;
 
-	std::expected<void, std::string> close() override;
+	void close() override;
 
 protected:
-	std::expected<long, std::string> basic_read(char* buffer, int size, int offset, int count) override;
+	long basic_read(char* buffer, int size, int offset, int count) override;
 
-	std::expected<long, std::string> basic_write(const char* data, int size, int offset, int count) override;
+	long basic_write(const char* data, int size, int offset, int count) override;
 
 private:
 	//确保容量 >= value(value 为绝对偏移)，返回值:true 表示新分配了数组,false 表示无需分配
-	std::expected<bool, std::string> ensureCapacity(long value);
+	bool ensureCapacity(long value);
 
 
 private:

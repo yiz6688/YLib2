@@ -27,7 +27,7 @@ int waveReadWriteTest()
 	std::string fullPath = path + fileName;
 	std::string out_fullPath = out_path + out_fileName;
 	//WaveReader reader(fullPath);
-	auto readerResult = WaveReader::create(fullPath);
+	auto readerResult = WaveReader::open(fullPath);
 	auto& reader = readerResult.value();
 
 	auto& fmt = reader->getWaveFormat();
@@ -44,17 +44,12 @@ int waveReadWriteTest()
 	while (true)
 	{
 		auto nread = reader->read(buffer, 4096);
-		int num = nread.value();
+		int num = nread;
 		if (num <= 0)
 		{
 			break;
 		}
 		auto result = writer->write(buffer, num);
-		if (!result)
-		{
-			println("写入失败: {}", result.error());
-			break;
-		}
 	}
 
 
@@ -80,18 +75,14 @@ void createSineTest()
 		double t = static_cast<double>(i) / fmt.getSampleRate(); //当前的时间点
 		double sampleValue = amplitude * sin(2.0 * numbers::pi * freq * t);
 		samples[i] = static_cast<float>(sampleValue);
-		auto result = writer1->writeSample(samples[i]);
+		auto result = writer1->writeFloat(samples.data() + i, 1);
 	}
 
 	//WaveWriter writer2(fmt, R"(D:\wave\out\sine2.wav)");
 	auto writerResult2 = WaveWriter::create(fmt, R"(D:\wave\out\sine2.wav)");
 	auto& writer2 = writerResult2.value();
 
-	auto result = writer2->writeSamples(samples.data(), nSamples);
-	if (!result)
-	{
-		println("写入失败: {}", result.error());
-	}
+	auto result = writer2->writeFloat(samples.data(), nSamples);
 }
 
 
@@ -294,16 +285,16 @@ int WaveRingTest()
 		auto& i16Writer = writerResult3.value();
 
 
-		auto result = i16Writer->write(i16Data.data(), i16Data.size());
-		if (result)
-		{
-			println("{} 写入成功:{}", path, result.value());
-		}
-		else
-		{
-			println("{} 写入失败:{}", path, result.error());
-			break;
-		}
+		// auto result = i16Writer->write(i16Data.data(), i16Data.size());
+		// if (result)
+		// {
+		// 	println("{} 写入成功:{}", path, result.value());
+		// }
+		// else
+		// {
+		// 	println("{} 写入失败:{}", path, result.error());
+		// 	break;
+		// }
 
 		//按照int24读取
 		writeSample = wb.writeFloat(samples.data(), nSamples);
@@ -319,16 +310,16 @@ int WaveRingTest()
 		auto writerResult4 = WaveWriter::create(i24Fmt, path);
 		auto& i24Writer = writerResult4.value();
 
-		result = i24Writer->write(i24Data.data(), i24Data.size());
-		if (result)
-		{
-			println("{} 写入成功:{}", path, result.value());
-		}
-		else
-		{
-			println("{} 写入失败:{}", path, result.error());
-			break;
-		}
+		// result = i24Writer->write(i24Data.data(), i24Data.size());
+		// if (result)
+		// {
+		// 	println("{} 写入成功:{}", path, result.value());
+		// }
+		// else
+		// {
+		// 	println("{} 写入失败:{}", path, result.error());
+		// 	break;
+		// }
 
 
 		//按照int32读取
@@ -345,16 +336,16 @@ int WaveRingTest()
 		auto writerResult5 = WaveWriter::create(i32Fmt, path);
 		auto& i32Writer = writerResult5.value();
 
-		result = i32Writer->write(i32Data.data(), i32Data.size());
-		if (result)
-		{
-			println("{} 写入成功:{}", path, result.value());
-		}
-		else
-		{
-			println("{} 写入失败:{}", path, result.error());
-			break;
-		}
+		// result = i32Writer->write(i32Data.data(), i32Data.size());
+		// if (result)
+		// {
+		// 	println("{} 写入成功:{}", path, result.value());
+		// }
+		// else
+		// {
+		// 	println("{} 写入失败:{}", path, result.error());
+		// 	break;
+		// }
 
 		//按照float读取
 		writeSample = wb.writeFloat(samples.data(), nSamples);
@@ -370,16 +361,16 @@ int WaveRingTest()
 		auto& floatWriter = writerResult6.value();
 
 
-		result = floatWriter->write(f32Data.data(), f32Data.size());
-		if (result)
-		{
-			println("{} 写入成功:{}", path, result.value());
-		}
-		else
-		{
-			println("{} 写入失败:{}", path, result.error());
-			break;
-		}
+		// result = floatWriter->write(f32Data.data(), f32Data.size());
+		// if (result)
+		// {
+		// 	println("{} 写入成功:{}", path, result.value());
+		// }
+		// else
+		// {
+		// 	println("{} 写入失败:{}", path, result.error());
+		// 	break;
+		// }
 
 
 

@@ -1,9 +1,9 @@
 #pragma once
-#include<expected>
 #include<string>
 #include<array>
 #include<cstdint>
 #include<cstring>
+#include<stdexcept>
 
 class BitConverter
 {
@@ -11,44 +11,44 @@ public:
 
 	//其他类型转字节数组
 
-	//字节数组转其他类型
+	//字节数组转其他类型(异常模式: 越界/空指针抛出 std::runtime_error)
 
-	static std::expected<double, std::string> ToDouble(const char* value, int valueLen, int startIndex)
+	static double ToDouble(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<double>(value, valueLen, startIndex);
 	}
 
-	static std::expected<float, std::string> ToSingle(const char* value,int valueLen, int startIndex)
+	static float ToSingle(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<float>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::int16_t, std::string> ToInt16(const char* value, int valueLen, int startIndex)
+	static std::int16_t ToInt16(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::int16_t>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::int32_t, std::string> ToInt32(const char* value, int valueLen, int startIndex)
+	static std::int32_t ToInt32(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::int32_t>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::int64_t, std::string> ToInt64(const char* value, int valueLen, int startIndex)
+	static std::int64_t ToInt64(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::int64_t>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::uint16_t, std::string> ToUInt16(const char* value, int valueLen, int startIndex)
+	static std::uint16_t ToUInt16(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::uint16_t>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::uint32_t, std::string> ToUInt32(const char* value, int valueLen, int startIndex)
+	static std::uint32_t ToUInt32(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::uint32_t>(value, valueLen, startIndex);
 	}
 
-	static std::expected<std::uint64_t, std::string> ToUInt64(const char* value, int valueLen, int startIndex)
+	static std::uint64_t ToUInt64(const char* value, int valueLen, int startIndex)
 	{
 		return Converter<std::uint64_t>(value, valueLen, startIndex);
 	}
@@ -56,21 +56,21 @@ public:
 public:
 	//返回
 	template<typename T>
-	static  std::expected<T, std::string> Converter(const char* buffer, int bufferLen, int startIndex)
+	static T Converter(const char* buffer, int bufferLen, int startIndex)
 	{
 		if (buffer == nullptr)
 		{
-			return std::unexpected("buffer is nullptr");
+			throw std::runtime_error("buffer is nullptr");
 		}
 
 		if (startIndex >= bufferLen)
 		{
-			return std::unexpected("startIndex must less than bufferLen");
+			throw std::runtime_error("startIndex must less than bufferLen");
 		}
 		int size = sizeof(T);
 		if (startIndex > bufferLen - size)
 		{
-			return std::unexpected("do not have enough bytes ");
+			throw std::runtime_error("do not have enough bytes");
 		}
 
 		T value;
@@ -79,16 +79,16 @@ public:
 	}
 
 	template<typename T>
-	static  std::expected<T, std::string> Converter(const char* buffer)
+	static T Converter(const char* buffer)
 	{
 		if (buffer == nullptr)
 		{
-			return std::unexpected("buffer is nullptr");
+			throw std::runtime_error("buffer is nullptr");
 		}
 		auto bufferlen = strlen(buffer);
 		if (bufferlen < sizeof(T))
 		{
-			return std::unexpected("字符串长度不匹配");
+			throw std::runtime_error("字符串长度不匹配");
 		}
 
 		T value;

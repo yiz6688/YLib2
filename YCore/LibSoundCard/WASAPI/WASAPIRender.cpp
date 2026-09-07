@@ -5,6 +5,7 @@
 #include"WASAPIRender.h"
 #include<Audioclient.h>
 #include<print>
+#include<stdexcept>
 
 
 static long ReftimesPerSec = 10000000;
@@ -159,84 +160,84 @@ std::expected<void, std::string> WASAPIRender::release()
 
 STAType WASAPIRender::doPlay()
 {
-	HRESULT hr;
-	auto result = this->fillBuffer(this->bufferFrameSize);
-	if (!result)
+	try
 	{
-		return result;
-	}
+		HRESULT hr;
+		 auto res = this->fillBuffer(this->bufferFrameSize);  //失败抛异常, 由本函数 try 收口
 
-	ResetEvent(this->hEvent);  //重置事件
-	ResetEvent(this->hExit);  //重置事件
+		ResetEvent(this->hEvent);  //重置事件
+		ResetEvent(this->hExit);  //重置事件
 
-	hr = pAudioClient->Start();
-	if (FAILED(hr))
-	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Start fail", hr));
-	}
-	this->playbackState = PlaybackState::Playing;
-	long numFramesPadding;
-
-	long actualDuration = (long)((double)ReftimesPerSec *
-		this->bufferFrameSize / this->waveFormat.getSampleRate());
-	int waitMilliseconds = (int)(actualDuration / ReftimesPerMillisec);
-
-	HANDLE handles[2] = { this->hEvent, this->hExit };
-	while (this->playbackState == PlaybackState::Playing)
-	{
-		DWORD dwSignalledIndex;
-		hr = CoWaitForMultipleHandles(
-					COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
-					waitMilliseconds,  // 超时时间：无限超时
-					2,                 // 句柄数量
-					handles,     // 句柄数组
-					&dwSignalledIndex  // 输出：触发返回的句柄索引
-				);
-
-		if (hr == S_OK) {
-			if(dwSignalledIndex == 0)  //信号事件
-			{
-				ResetEvent(this->hEvent);  //重置事件
-			}else if(dwSignalledIndex == 1)  //退出事件
-			{
-				break;
-			}
-		}
-
-
-		UINT32 numFramesPadding;
-		hr = this->pAudioClient->GetCurrentPadding(&numFramesPadding);
+		hr = pAudioClient->Start();
 		if (FAILED(hr))
 		{
-			return std::unexpected(std::format("{},hr={}", "AudioClient GetCurrentPadding fail", hr));
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient Start fail", hr));
 		}
+		this->playbackState = PlaybackState::Playing;
+		long numFramesPadding;
 
-		if (numFramesPadding < 0)
+		long actualDuration = (long)((double)ReftimesPerSec *
+			this->bufferFrameSize / this->waveFormat.getSampleRate());
+		int waitMilliseconds = (int)(actualDuration / ReftimesPerMillisec);
+
+		HANDLE handles[2] = { this->hEvent, this->hExit };
+		while (this->playbackState == PlaybackState::Playing)
 		{
-			break;
-		}
+			DWORD dwSignalledIndex;
+			hr = CoWaitForMultipleHandles(
+						COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
+						waitMilliseconds,  // 超时时间
+						2,                 // 句柄数量
+						handles,     // 句柄数组
+						&dwSignalledIndex  // 输出：触发返回的句柄索引
+					);
 
-		auto numFramesAvaliable = this->bufferFrameSize - numFramesPadding;
+			if (hr == S_OK) {
+				if(dwSignalledIndex == 0)  //信号事件
+				{
+					ResetEvent(this->hEvent);  //重置事件
+				}else if(dwSignalledIndex == 1)  //退出事件
+				{
+					break;
+				}
+			}
 
-		if (numFramesAvaliable > 10)
-		{
-			result = this->fillBuffer(numFramesAvaliable);
-			if (!result)
+
+			UINT32 numFramesPadding;
+			hr = this->pAudioClient->GetCurrentPadding(&numFramesPadding);
+			if (FAILED(hr))
+			{
+				throw std::runtime_error(std::format("{},hr={}", "AudioClient GetCurrentPadding fail", hr));
+			}
+
+			if (numFramesPadding < 0)
 			{
 				break;
 			}
+
+			auto numFramesAvaliable = this->bufferFrameSize - numFramesPadding;
+
+			if (numFramesAvaliable > 10)
+			{
+				auto rr = this->fillBuffer(numFramesAvaliable);  //失败抛异常
+			}
 		}
+
+
+		hr = this->pAudioClient->Stop();
+		if (FAILED(hr))
+		{
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient Stop fail", hr));
+		}
+		this->playbackState = PlaybackState::Stopped;
+
+		return STAType();
 	}
-
-
-	hr = this->pAudioClient->Stop();
-	if (FAILED(hr))
+	catch (const std::exception& e)
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Stop fail", hr));
+		this->playbackState = PlaybackState::Stopped;
+		return std::unexpected(e.what());
 	}
-	this->playbackState = PlaybackState::Stopped;
-
-	return STAType();
 }
 
 STAType WASAPIRender::fillBuffer(int frameSize)
@@ -255,24 +256,19 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	hr = this->pRenderClient->GetBuffer(frameSize, &pData);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetBuffer fail", hr));
+		throw std::runtime_error(std::format("{},hr={}", "AudioClient GetBuffer fail", hr));
 	}
 
-	auto readResult = this->waveReader->read((char*)pData, byteSize, 0, byteSize);
-	if (!readResult)
-	{
-		return std::unexpected(std::format("{},hr={}", "WaveReader read fail", readResult.error()));
-	}
+	long readSize = this->waveReader->read((char*)pData, byteSize, 0, byteSize);  //失败抛异常
 
-	int readSize = readResult.value();
-	for (int i = readSize; i < byteSize; i++)  //不足部分补0
+	for (long i = readSize; i < byteSize; i++)  //不足部分补0
 	{
 		pData[i] = 0;
 	}
 	hr = this->pRenderClient->ReleaseBuffer(frameSize, 0);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
+		throw std::runtime_error(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
 	}
 	if(readSize == 0)
 	{

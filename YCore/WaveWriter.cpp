@@ -1,337 +1,231 @@
-#include"WaveWriter.h"
+﻿#include"WaveWriter.h"
 #include"FileStream.h"
+#include<stdexcept>
 
-
-//检查返回值如果失败返回错误
-#define CHECK_RESULT(result) if (!result) { return std::unexpected{ result.error() }; }
-
-
-
-WaveWriter::WaveWriter(const WaveFormat& _waveFormat, Stream* stream)
-	:_ptr(nullptr), _stream(stream), _dataSize(0), _fmt{ _waveFormat.clone() }
+//根据格式映射到 WaveBuffer 使用的 SampleType
+static bool formatToSampleType(const WaveFormat& fmt, SampleType& out)
 {
-	auto result = this->writeWaveHeader();
-	if(! result)
+	auto enc = fmt.getEncoding();
+	int bits = fmt.getBitsPerSample();
+	if (enc == WaveFormatEncoding::IeeeFloat)
 	{
-		throw std::runtime_error(result.error());
+		if (bits == 32) { out = SampleType::IEEE32; return true; }
+		if (bits == 64) { out = SampleType::IEEE64; return true; }
+		return false;
 	}
-
+	if (bits == 16) { out = SampleType::INT16; return true; }
+	if (bits == 24) { out = SampleType::INT24; return true; }
+	if (bits == 32) { out = SampleType::INT32; return true; }
+	return false;
 }
 
-WaveWriter::WaveWriter(const WaveFormat& _waveFormat, TPtr<Stream>&& stream)
-	:_ptr{ std::move(stream) }, _stream{ _ptr.get() }, 
-	_dataSize{ 0 }, _fmt{ _waveFormat.clone() }
+WaveWriter::WaveWriter(WaveStream& stream, SampleType storageType)
+	: _ptr{ nullptr }, _stream(&stream), _storageType{ storageType }
 {
-	auto result = this->writeWaveHeader();
-	if (!result)
-	{
-		throw std::runtime_error(result.error());
-	}
+	this->_wb = std::make_unique<WaveBuffer>(this->_storageType,
+		this->_chunkFrames + 4, stream.getWaveFormat().getChannels());
 }
 
-
-WaveWriter::~WaveWriter()
+WaveWriter::WaveWriter(std::unique_ptr<WaveStream>&& stream, SampleType storageType)
+	: _ptr{ std::move(stream) }, _stream(_ptr.get()), _storageType{ storageType }
 {
-	//this->flush(); 
-};
-
-std::expected<long, std::string> WaveWriter::write(char* buffer, int size, int offset, int count)
-{
-
-	if (count % this->_fmt->getBlockAlign() != 0)
-	{
-		return std::unexpected{ "写入块没有对齐" };
-	}
-	auto result = this->_stream->write(buffer, size, offset, count); CHECK_RESULT(result);
-	this->_dataSize += result.value();  //更新data块数量
-	auto ret = this->updateHeader();   CHECK_RESULT(ret);  //刷新写入数据后更新头部信息
-
-	return result.value();
+	this->_wb = std::make_unique<WaveBuffer>(this->_storageType,
+		this->_chunkFrames + 4, this->_stream->getWaveFormat().getChannels());
 }
 
-std::expected<long, std::string> WaveWriter::write(char* buffer, int count)
+//统一的交织浮点写入: writeFloat 转换进 WaveBuffer 环形区 -> getReadBuffer 锁定排空写流
+template<typename F>
+int WaveWriter::writeFloatImpl(F* buffer, int sampleNum)
 {
-	return this->write(buffer, count, 0, count);
-}
-
-std::expected<long, std::string> WaveWriter::writeSamples(float* buffer, int nsamples)
-{
-
-	int nBytes = this->_fmt->getBitsPerSample() / 8;
-	int start = 0;
-	int wlen = 0;
-	long writeSamples = 0;
-	if (this->_fmt->getEncoding() == WaveFormatEncoding::IeeeFloat)
+	if (buffer == nullptr || sampleNum <= 0 || this->_wb == nullptr)
 	{
-		char* ptr = reinterpret_cast<char*>(buffer);
-		auto result = this->write(ptr, nsamples * 4);//浮点数不需要转换直接写入
-		CHECK_RESULT(result);
-		writeSamples = (result.value() / 4);
-		return writeSamples;
+		return 0;
 	}
-
-	if (nBytes == 2)
+	const int channels = this->_stream->getWaveFormat().getChannels();
+	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
+	if (channels <= 0 || frameSize <= 0)
 	{
-		auto len = this->bufferLen / 2;  //缓冲区有效长度
-		short* sptr = reinterpret_cast<short*>(this->convBuffer);  //转换缓冲区
-		wlen = len;
+		return 0;
+	}
+	int bytesPerSample = frameSize / channels;
 
-		for (start = 0; start < nsamples; start += len)
+	long doneFloats = 0;
+	while (doneFloats < sampleNum)
+	{
+		//交织浮点写入 WaveBuffer(转换为存储类型, 进入环形区)
+		int w = this->_wb->writeFloat(buffer + doneFloats, sampleNum - static_cast<int>(doneFloats));
+		if (w <= 0)
 		{
-			if (start + wlen >= nsamples)
-			{
-				wlen = nsamples - start;
-			}
-			SampleConv::FloattoInt16(buffer + start, wlen, sptr);  //每次转换这么长
-			auto result = this->write(this->convBuffer, wlen * 2);  //转换过的数据写入
-			CHECK_RESULT(result);
-			writeSamples += result.value() / 2;
-		};
-		return writeSamples;
-	}
-	else if (nBytes == 3)
-	{
-		int len1 = this->bufferLen / 3;
-		wlen = len1;
-
-		for (start = 0; start < nsamples; start += len1)
+			break;
+		}
+		//每通道需要排空的字节数
+		int remainPerCh = static_cast<int>(w / channels * bytesPerSample);
+		//借用 getReadBuffer 锁定直接排空环形区写流, 无需额外缓冲
+		while (remainPerCh > 0)
 		{
-			if (start + wlen >= nsamples)
+			auto sp = this->_wb->getReadBuffer(remainPerCh);
+			if (sp.size() == 0)
 			{
-				wlen = nsamples - start;
+				break;
 			}
-			SampleConv::FloattoInt24Byte(buffer + start, wlen, this->convBuffer);  //每次转换这么长
-			auto result = this->WaveWriter::write(this->convBuffer, wlen * 3);  //转换过的数据写入
-			CHECK_RESULT(result);
-			writeSamples += result.value() / 3;
-		};
-		return writeSamples;
+			long wr = this->_stream->write(sp.data(), static_cast<int>(sp.size()));  //失败抛出异常
+			this->_wb->releaseReadBuffer();
+			int wb = static_cast<int>(wr);
+			remainPerCh -= wb / channels;
+			doneFloats += wb / bytesPerSample;
+		}
 	}
-	else if (nBytes == 4)
-	{
-
-		int len1 = this->bufferLen / 4;  //缓冲区有效长度
-		int* i32ptr = (int*)(this->convBuffer);  //转换缓冲区
-		wlen = len1;
-
-		for (start = 0; start < nsamples; start += len1)
-		{
-			if (start + wlen >= nsamples)
-			{
-				wlen = nsamples - start;
-			}
-			SampleConv::FloattoInt32(buffer + start, wlen, i32ptr);  //每次转换这么长
-			auto result = this->WaveWriter::write(this->convBuffer, wlen * 4);  //转换过的数据写入
-			CHECK_RESULT(result);
-			writeSamples += result.value() / 4;
-		};
-		return writeSamples;
-	}
-	else
-	{
-		return std::unexpected{ "暂不支持的格式" };
-	}
+	return static_cast<int>(doneFloats);
 }
 
-std::expected<long, std::string> WaveWriter::writeSample(float value)
+int WaveWriter::writeFloat(float* buffer, int sampleNum)
 {
-	int nBytes = this->_fmt->getBitsPerSample() / 8;
-	long writeSamples = 0;
-	if (this->_fmt->getEncoding() == WaveFormatEncoding::IeeeFloat)
-	{
-		char* ptr = reinterpret_cast<char*>(&value);
-		auto result = this->write(ptr, 4);//浮点数不需要转换直接写入
-		CHECK_RESULT(result);
-		writeSamples = (result.value() / 4);
-		return writeSamples;
-	}
-
-	if (nBytes == 2)
-	{
-		short* sptr = reinterpret_cast<short*>(this->convBuffer);  //转换缓冲区
-		SampleConv::FloattoInt16(&value, 1,  sptr);  //每次转换这么长
-		auto result = this->write(this->convBuffer, 2);  //转换过的数据写入
-		CHECK_RESULT(result);
-		writeSamples += result.value() / 2;
-		return writeSamples;
-	}
-	else if (nBytes == 3)
-	{
-
-		SampleConv::FloattoInt24Byte(&value, 1, this->convBuffer);  //每次转换这么长
-		auto result = this->write(this->convBuffer, 3);  //转换过的数据写入
-		CHECK_RESULT(result);
-		writeSamples += result.value() / 3;
-		return writeSamples;
-	}
-	else if (nBytes == 4)
-	{
-
-		int* i32ptr = (int*)(this->convBuffer);  //转换缓冲区
-		SampleConv::FloattoInt32(&value, 1, i32ptr);  //每次转换这么长
-		auto result = this->write(this->convBuffer, 4);  //转换过的数据写入
-		CHECK_RESULT(result);
-		writeSamples += result.value() / 4;
-		return writeSamples;
-	}
-	else
-	{
-		return std::unexpected{ "暂不支持的格式" };
-	}
+	return this->writeFloatImpl(buffer, sampleNum);
 }
 
-
-
-std::expected<long, std::string> WaveWriter::getPosition()
+int WaveWriter::writeFloat(double* buffer, int sampleNum)
 {
-	auto pos = this->_stream->getPosition();
-	if (!pos)
+	return this->writeFloatImpl(buffer, sampleNum);
+}
+
+//原生类型交织写入: 直接写原始字节到 stream
+int WaveWriter::writeRaw(Sample& sample, int sampleNum)
+{
+	if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
 	{
-		return pos;
+		return 0;
 	}
-
-	return { pos.value() - this->_dataPos - 8};
+	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
+	long wr = this->_stream->write(sample.raw, sampleNum * frameSize);  //失败抛出异常
+	return static_cast<int>(wr) / frameSize;
 }
 
-std::expected<void, std::string> WaveWriter::setPosition(long value)
+//写入原始字节(透传到底层 WaveStream), 失败抛出异常
+long WaveWriter::write(char* buffer, int size, int offset, int count)
 {
-	auto len = this->_stream->getLength(); CHECK_RESULT(len);
-	
-	if (value > len.value())
-	{
-		value = len.value();
-	}else if(value < 0)
-	{
-		value = 0;
-	}
-	value -= (value % this->_fmt->getBlockAlign());  //对齐采样块
-
-	return this->_stream->setPosition(value + this->_dataPos + 8);
+	return this->_stream->write(buffer, size, offset, count);
 }
 
-std::expected<long, std::string> WaveWriter::seek(long offset, SeekOrigin origin)
+long WaveWriter::write(char* buffer, int size)
 {
-	auto pos = this->_stream->getPosition(); CHECK_RESULT(pos);
-	auto len = this->_stream->getLength();	CHECK_RESULT(len);
-
-	if (origin == SeekOrigin::Current)
-	{
-		offset += pos.value();
-	}
-	else if (origin == SeekOrigin::End)
-	{
-		offset = len.value() + offset;
-	}
-
-	auto result = this->setPosition(offset); CHECK_RESULT(result);
-
-	return this->getPosition();
+	return this->_stream->write(buffer, size);
 }
 
-std::expected<long, std::string> WaveWriter::seekTime(long mills, SeekOrigin origin)
+const WaveFormat& WaveWriter::getWaveFormat() const
 {
-	auto bytes = this->_fmt->mills2Bytes(mills);
-	return this->seek(bytes, origin);
-}
-
-std::expected<void, std::string> WaveWriter::setTimePos(long mills)
-{
-	long bytes = this->_fmt->mills2Bytes(mills);
-	return this->setPosition(bytes);
-}
-
-std::expected<long, std::string> WaveWriter::getTimePos()
-{
-	auto pos = this->getPosition();
-	if (!pos)
-	{
-		return pos;
-	}
-	return this->_fmt->bytes2Mills(pos.value());
-}
-
-std::expected<void, std::string> WaveWriter::writeWaveHeader()
-{
-
-	char buffer[16] = { 0 };
-	std::copy_n("RIFF\0\0\0\0WAVEfmt ", 16, buffer);
-	auto result = this->_stream->write(buffer, 16); CHECK_RESULT(result);
-	// auto result = this->_stream->write("RIFF"); CHECK_RESULT(result);
-	// result = this->_stream->write("\0\0\0\0", 4); CHECK_RESULT(result); //riff块大小，占位，后续更新 4字节
-	// result = this->_stream->write("WAVE"); CHECK_RESULT(result);
-	// result = this->_stream->write("fmt "); CHECK_RESULT(result);
-	auto ret = this->_fmt->writeTo(this->_stream); CHECK_RESULT(ret);
-
-	result = this->_stream->getPosition();  CHECK_RESULT(result);//记录data块size的位置，后续更新
-	this->_dataPos = result.value();
-
-	std::copy_n("data\0\0\0\0", 8, buffer);
-	//result = this->_stream->write("data"); CHECK_RESULT(result);
-	//result = this->_stream->write("\0\0\0\0", 4);  CHECK_RESULT(result);//data块大小，占位，后续更新  4字节
-	result = this->_stream->write(buffer, 8); CHECK_RESULT(result);
-
-	return {};
-}
-
-
-std::expected<void, std::string> WaveWriter::flush()
-{
-	auto result = this->updateHeader();   CHECK_RESULT(result); //更新文件头
-	return this->_stream->flush();  //flush
+	return this->_stream->getWaveFormat();
 }
 
 long WaveWriter::getLength()
 {
-	return this->_dataSize;
+	return this->_stream->getLength();
+}
+
+long WaveWriter::getFrameCount()
+{
+	return this->_stream->getFrameCount();
 }
 
 long WaveWriter::getTotalMills()
 {
-	return this->_dataSize * 1000 / this->_fmt->getBytesPerSec();
+	return this->_stream->getTotalMills();
 }
 
-const WaveFormat& WaveWriter::getWaveFormat()
+int WaveWriter::getChannels()
 {
-	return *(this->_fmt);
+	return this->_stream->getChannels();
 }
 
-std::expected<void, std::string> WaveWriter::updateHeader()
+void WaveWriter::flush()
 {
-	//获取当前写指针
-	auto position = this->getPosition(); CHECK_RESULT(position);
-
-	auto lenResult = this->_stream->getLength(); CHECK_RESULT(lenResult);
-	long fileLen = lenResult.value();
-
-	//更新RIFF
-	auto result = this->_stream->seek(4, SeekOrigin::Begin); CHECK_RESULT(result);
-	int val = static_cast<int>(fileLen - 8);
-	result = this->_stream->write(reinterpret_cast<char*>(&val), 4); CHECK_RESULT(result);
-
-	//更新data块
-	result = this->_stream->seek(this->_dataPos + 4, SeekOrigin::Begin); CHECK_RESULT(result);
-	result = this->_stream->write(reinterpret_cast<char*>(&this->_dataSize), 4); CHECK_RESULT(result);
-	//恢复原来的位置
-	auto ret = this->setPosition(position.value()); CHECK_RESULT(ret);
-	return {};
+	this->_stream->flush();
 }
 
-TPResult<WaveWriter> WaveWriter::create(const WaveFormat &_waveFormat, std::string_view filepath)
+long WaveWriter::getPosition()
 {
-    auto fsResult = FileStream::create(filepath, FileMode::Create, FileAccess::Write);
-	if(!fsResult)
+	return this->_stream->getPosition();
+}
+
+long WaveWriter::seek(long offset, SeekOrigin origin)
+{
+	return this->_stream->seek(offset, origin);
+}
+
+long WaveWriter::getTimePos()
+{
+	return this->_stream->getTimePos();
+}
+
+//一次性从文件创建(内部创建并持有 WaveStream), 工厂: 失败转 expected
+TPResult<WaveWriter> WaveWriter::create(const WaveFormat& waveFormat, std::string_view filepath)
+{
+	try
 	{
-		return make_err<WaveWriter>(fsResult.error());
+		auto ws = WaveStream::create(waveFormat, filepath);
+		if (!ws)
+		{
+			return make_err<WaveWriter>(ws.error());
+		}
+
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType((*ws)->getWaveFormat(), st) || (*ws)->getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveWriter>("暂不支持的格式");
+		}
+
+		TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(std::move(ws.value()), st));
+
+		return ptr;
 	}
-
-	TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(_waveFormat, std::move(fsResult.value())));
-
-	return ptr;
+	catch (const std::exception& e)
+	{
+		return make_err<WaveWriter>(e.what());
+	}
 }
 
-TPResult<WaveWriter> WaveWriter::create(const WaveFormat &_waveFormat, Stream *stream)
+//借用已存在的 WaveStream(使用权), 工厂: 失败转 expected
+TPResult<WaveWriter> WaveWriter::create(WaveStream& stream)
 {
-    TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(_waveFormat, stream));
-	
-    return ptr;
+	try
+	{
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType(stream.getWaveFormat(), st) || stream.getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveWriter>("暂不支持的格式");
+		}
+
+		TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(stream, st));
+
+		return ptr;
+	}
+	catch (const std::exception& e)
+	{
+		return make_err<WaveWriter>(e.what());
+	}
+}
+
+//转移 WaveStream 所有权, 工厂: 失败转 expected
+TPResult<WaveWriter> WaveWriter::create(std::unique_ptr<WaveStream>&& stream)
+{
+	try
+	{
+		if (!stream)
+		{
+			return make_err<WaveWriter>("空 WaveStream");
+		}
+
+		SampleType st = SampleType::UNKNOWN;
+		if (!formatToSampleType(stream->getWaveFormat(), st) || stream->getWaveFormat().getChannels() <= 0)
+		{
+			return make_err<WaveWriter>("暂不支持的格式");
+		}
+
+		TPtr<WaveWriter> ptr = TPtr<WaveWriter>(new WaveWriter(std::move(stream), st));
+
+		return ptr;
+	}
+	catch (const std::exception& e)
+	{
+		return make_err<WaveWriter>(e.what());
+	}
 }

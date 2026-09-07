@@ -5,6 +5,7 @@
 #include"WASAPICapture.h"
 #include<Audioclient.h>
 #include<print>
+#include<stdexcept>
 
 
 static long ReftimesPerSec = 10000000;
@@ -160,64 +161,67 @@ std::expected<void, std::string> WASAPICapture::release()
 
 std::expected<void, std::string> WASAPICapture::doCapture()
 {
-	HRESULT hr;
-	UINT32  numFramesPadding;
-
-	auto bytesPerFrame = this->waveFormat.getBlockAlign();
-	ResetEvent(this->hEvent);  //重置事件
-	ResetEvent(this->hExit);  //重置事件
-
-	hr = pAudioClient->Start();
-	if (FAILED(hr))
+	try
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Start fail", hr));
-	}
+		HRESULT hr;
+		UINT32  numFramesPadding;
 
-	this->captureState = CaptureState::Capturing;
+		auto bytesPerFrame = this->waveFormat.getBlockAlign();
+		ResetEvent(this->hEvent);  //重置事件
+		ResetEvent(this->hExit);  //重置事件
 
-	long actualDuration = (long)((double)ReftimesPerSec *
-		this->bufferFrameSize / this->waveFormat.getSampleRate());
-	int waitMilliseconds = (int)(3 * actualDuration / ReftimesPerMillisec);
-	HANDLE handles[2] = { this->hEvent, this->hExit };
-
-	while (this->captureState == CaptureState::Capturing)
-	{
-		DWORD dwSignalledIndex;
-		hr = CoWaitForMultipleHandles(
-					COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
-					waitMilliseconds,  // 超时时间：无限超时
-					2,                 // 句柄数量
-					handles,     // 句柄数组
-					&dwSignalledIndex  // 输出：触发返回的句柄索引
-				);
-
-		if (hr == S_OK) {
-			if(dwSignalledIndex == 0)  //信号事件
-			{
-				ResetEvent(this->hEvent);  //重置事件
-			}else if(dwSignalledIndex == 1)  //退出事件
-			{
-				break;
-			}
-		}
-
-		auto res = this->readNextPacket();
-		if (!res)
+		hr = pAudioClient->Start();
+		if (FAILED(hr))
 		{
-			break;
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient Start fail", hr));
 		}
 
-	}
+		this->captureState = CaptureState::Capturing;
 
-	hr = this->pAudioClient->Stop();
-	if (FAILED(hr))
+		long actualDuration = (long)((double)ReftimesPerSec *
+			this->bufferFrameSize / this->waveFormat.getSampleRate());
+		int waitMilliseconds = (int)(3 * actualDuration / ReftimesPerMillisec);
+		HANDLE handles[2] = { this->hEvent, this->hExit };
+
+		while (this->captureState == CaptureState::Capturing)
+		{
+			DWORD dwSignalledIndex;
+			hr = CoWaitForMultipleHandles(
+						COWAIT_ALERTABLE,  // 允许在等待期间处理 APC（异步过程调用）
+						waitMilliseconds,  // 超时时间
+						2,                 // 句柄数量
+						handles,     // 句柄数组
+						&dwSignalledIndex  // 输出：触发返回的句柄索引
+					);
+
+			if (hr == S_OK) {
+				if(dwSignalledIndex == 0)  //信号事件
+				{
+					ResetEvent(this->hEvent);  //重置事件
+				}else if(dwSignalledIndex == 1)  //退出事件
+				{
+					break;
+				}
+			}
+
+			auto res = this->readNextPacket();  //失败抛异常, 由本函数 try 收口
+		}
+
+		hr = this->pAudioClient->Stop();
+		if (FAILED(hr))
+		{
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient Stop fail", hr));
+		}
+		this->captureState = CaptureState::Stopped;
+
+
+		return STAType();
+	}
+	catch (const std::exception& e)
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Stop fail", hr));
+		this->captureState = CaptureState::Stopped;
+		return std::unexpected(e.what());
 	}
-	this->captureState = CaptureState::Stopped;
-
-
-	return STAType();
 }
 
 STAType WASAPICapture::readNextPacket()
@@ -233,7 +237,7 @@ STAType WASAPICapture::readNextPacket()
 		hr = this->pCaptureClient->GetNextPacketSize(&packetSize);
 		if (FAILED(hr))	
 		{
-			return std::unexpected(std::format("{},hr={}", "AudioClient GetNextPacketSize fail", hr));
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient GetNextPacketSize fail", hr));
 		}
 
 		if (packetSize == 0)
@@ -251,41 +255,28 @@ STAType WASAPICapture::readNextPacket()
 
 
 		int bytesAvailable = framesAvailable * bytesPerFrame;
-		//就方案是装不下的时候开始写入。
-		
+
 		// if not silence...
 		if ((dwFlags & AUDCLNT_BUFFERFLAGS_SILENT) != AUDCLNT_BUFFERFLAGS_SILENT)
 		{
 			long mills = this->waveWriter->getTotalMills();
 			long mills2 = this->recordMills - mills;
 			long bytesWriteable = this->waveFormat.mills2Bytes(mills2);
-			std::expected<long, std::string> writeResult;
 			if(bytesWriteable > bytesAvailable)
 			{
-				writeResult = this->waveWriter->write((char*)pData, bytesAvailable);
+				this->waveWriter->write((char*)pData, bytesAvailable);  //失败抛异常
 			}else
 			{
-				writeResult = this->waveWriter->write((char*)pData, bytesWriteable);
+				this->waveWriter->write((char*)pData, bytesWriteable);  //失败抛异常
 				this->captureState = CaptureState::Stopping;
 			}
-			
-			//this->ringBuffer->writeBytes((char*)pData, bytesAvailable);  //写入环形缓冲区
-			//std::copy(pData, pData + bytesAvailable, this->recordBuffer + recordBufferOffset);  //拷贝到缓冲区中
-		}
-		else
-		{
-			//std::fill_n(recordBuffer + recordBufferOffset, bytesAvailable, 0);  //尾巴的这一段清空
-			//写入0；
 		}
 		hr = this->pCaptureClient->ReleaseBuffer(framesAvailable);  //释放对应的缓冲区
 		if (FAILED(hr))
 		{
-			return std::unexpected(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
+			throw std::runtime_error(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
 		}
 	}
-
-
-	//跳出来之后，检查缓冲区中是否有数据，有数据就写入流
 
 
 	return std::expected<void, std::string>();

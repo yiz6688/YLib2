@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include"WaveFormat.h"
 #include"myType.h"
 #include"RingBuffer2.h"
@@ -6,6 +6,7 @@
 #include<cstring>
 #include<limits>
 #include<algorithm>
+#include<type_traits>
 
 
 
@@ -27,6 +28,15 @@ struct Sample
 
     int _chnInx;
 
+};
+
+
+//纯字节通道搬运描述: 与 Sample 对齐(但无类型, 也就没有类型一致性检查), 按字节计数
+struct ChannelBytes
+{
+    char* raw;      //目标(读)/源(写)缓冲
+    int   byteSize; //该通道字节数
+    int   chnInx;   //指定通道
 };
 
 
@@ -106,10 +116,29 @@ public:
     int readRaw(WaveMix& mix, int sampleNum);
     int writeRaw(WaveMix& mix, int sampleNum);
 
+    //交织原始数据读写: 以 Sample 描述缓冲(入参), 直接读写交织字节
+    int readRaw(Sample& sample, int sampleNum);
+    int writeRaw(Sample& sample, int sampleNum);
+
+    //纯字节单通道: 去交织读/交织写指定通道(byteSize 为该通道字节数), 返回搬运的字节数
+    int readChannelBytes(int ch, char* dest, int byteSize);
+    int writeChannelBytes(int ch, const char* src, int byteSize);
+
+    //纯字节按需多通道: 一次锁定按指定通道去交织读/交织写(vector<ChannelBytes>), 返回每通道字节数
+    int readChannelsBytes(const std::vector<ChannelBytes>& channels);
+    int writeChannelsBytes(const std::vector<ChannelBytes>& channels);
+
 
 
     int writeBytes(char* ptr, int byteSize);
     int readBytes(char* ptr, int byteSize);
+
+    //交织浮点读写(泛型): 直接以交织(F=float/double)形式读写环形区, 不做拆通道
+    template<typename F>
+    int readFloat(F* buffer, int sampleNum);
+
+    template<typename F>
+    int writeFloat(F* buffer, int sampleNum);
 
     std::span<char> getReadBuffer(int perChSize);
     int releaseReadBuffer();
@@ -122,7 +151,7 @@ private:
 
     template<typename F>
     //int toFloat32(char* src, F* dest, int sampleNum, int chnIndex)
-    int toFloat32(char *src, F *dest, int sampleNum, int chnIndex)
+    int toFloat32(char *src, F *dest, int sampleNum, int chnIndex, int stride = 1)
     {
         src = src + chnIndex * this->_byteDepth;  //起始指针位置
         int nFrames = sampleNum;
@@ -135,7 +164,7 @@ private:
                 std::memcpy(&value, src, 8);
                 *dest = value;
                 src += this->_frameSize; //起始指针
-                dest++;
+                dest += stride;
             }
         }
         else if(this->_type == SampleType::IEEE32)
@@ -144,11 +173,13 @@ private:
             for(int i=0; i<nFrames; i++)
             {
                 std::memcpy(&value, src, 4);
+
                 *dest = value;
-                src += this->_frameSize; //起始指针
-                dest++;
+                src += this->_frameSize;
+                dest += stride;
             }
-        }else if(this->_type == SampleType::INT32)
+        }
+        else if(this->_type == SampleType::INT32)
         {
             int value = 0;
             F coeff = -1.0 / (std::numeric_limits<int>::min)();
@@ -157,7 +188,7 @@ private:
                 value = (src[0] & 0xFF) | ((src[1] & 0xFF) << 8) | ((src[2] & 0xFF) << 16) | ((src[3] & 0xFF) << 24);
                 *dest = value * coeff;
                 src += this->_frameSize; //起始指针
-                dest++;
+                dest += stride;
             }
         }else if(this->_type == SampleType::INT24)
         {
@@ -169,7 +200,7 @@ private:
                 value >>= 8;
                 *dest = value * coeff;
                 src += this->_frameSize; //起始指针
-                dest++;
+                dest += stride;
             }
         }else if(this->_type == SampleType::INT16)
         {
@@ -181,7 +212,7 @@ private:
                 value >>= 16;
                 *dest = value * coeff;
                 src += this->_frameSize; //起始指针
-                dest++;
+                dest += stride;
             }
         }else
         {
@@ -192,7 +223,7 @@ private:
     }
 
     template<typename F>
-    int fromFloat32(F* src, char* dest, int sampleNum, int chnIndex)
+    int fromFloat32(F* src, char* dest, int sampleNum, int chnIndex, int stride = 1)
     //int WaveBuffer::fromFloat32(float *src, char *dest, int sampleNum, int chnIndex)
     {
         dest = dest + chnIndex * this->_byteDepth;  //起始指针位置
@@ -205,7 +236,7 @@ private:
             {
                 value = *src;
                 std::memcpy(dest, &value, 8);
-                src++;
+                src += stride;
                 dest += this->_frameSize; //起始指针
             }
         }
@@ -216,7 +247,7 @@ private:
             {
                 value = *src;
                 std::memcpy(dest, &value, 4);
-                src++;
+                src += stride;
                 dest += this->_frameSize; //起始指针
             }
         }else if(this->_type == SampleType::INT32)
@@ -228,7 +259,7 @@ private:
                 double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
                 value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<int>::max)())));
                 std::memcpy(dest, &value, 4);
-                src++;
+                src += stride;
                 dest += this->_frameSize; //起始指针
             }
         }else if(this->_type == SampleType::INT24)
@@ -239,7 +270,7 @@ private:
                 double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
                 value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<int24>::max)())));
                 std::memcpy(dest, &value, 3);
-                src++;
+                src += stride;
                 dest += this->_frameSize; //起始指针
             }
         }else if(this->_type == SampleType::INT16)
@@ -250,7 +281,7 @@ private:
                 double v = std::clamp(static_cast<double>(*src), -1.0, 1.0);
                 value = static_cast<int>(std::round(v * static_cast<double>((std::numeric_limits<short>::max)())));
                 std::memcpy(dest, &value, 2);
-                src++;
+                src += stride;
                 dest += this->_frameSize; //起始指针
             }
         }else
@@ -272,3 +303,126 @@ private:
 	std::unique_ptr<ByteRing> _pRing;
 
 };
+
+//交织浮点读取(泛型): 存储(交织) -> F(float/double) 交织输出, 返回读出的采样数
+template<typename F>
+int WaveBuffer::readFloat(F* buffer, int sampleNum)
+{
+    if (buffer == nullptr || sampleNum <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = sampleNum / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int rdFrames = 0;
+    while (rdFrames < frames)
+    {
+        int byteSize = (frames - rdFrames) * this->_frameSize;
+        auto buf = this->_pRing->getReadBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        //快速路径: 类型完全匹配(IEEE32->float / IEEE64->double)时无需转换, 整块拷贝
+        if constexpr (std::is_same_v<F, float>)
+        {
+            if (this->_type == SampleType::IEEE32)
+            {
+                std::memcpy(buffer + static_cast<long>(rdFrames) * this->_chnNum, buf.data(), buf.size());
+            }
+            else
+            {
+                for (int ch = 0; ch < this->_chnNum; ch++)
+                {
+                    this->toFloat32(buf.data(), buffer + static_cast<long>(rdFrames) * this->_chnNum + ch,
+                        nFrames, ch, this->_chnNum);
+                }
+            }
+        }
+        else
+        {
+            if (this->_type == SampleType::IEEE64)
+            {
+                std::memcpy(buffer + static_cast<long>(rdFrames) * this->_chnNum, buf.data(), buf.size());
+            }
+            else
+            {
+                for (int ch = 0; ch < this->_chnNum; ch++)
+                {
+                    this->toFloat32(buf.data(), buffer + static_cast<long>(rdFrames) * this->_chnNum + ch,
+                        nFrames, ch, this->_chnNum);
+                }
+            }
+        }
+        rdFrames += nFrames;
+        this->_pRing->releaseReadBuffer();
+    }
+    return rdFrames * this->_chnNum;
+}
+
+//交织浮点写入(泛型): F(float/double) 交织输入 -> 存储(交织), 返回写入的采样数
+template<typename F>
+int WaveBuffer::writeFloat(F* buffer, int sampleNum)
+{
+    if (buffer == nullptr || sampleNum <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = sampleNum / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int wrFrames = 0;
+    while (wrFrames < frames)
+    {
+        int byteSize = (frames - wrFrames) * this->_frameSize;
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        //快速路径: 类型完全匹配(float->IEEE32 / double->IEEE64)时无需转换, 整块拷贝
+        if constexpr (std::is_same_v<F, float>)
+        {
+            if (this->_type == SampleType::IEEE32)
+            {
+                std::memcpy(buf.data(), buffer + static_cast<long>(wrFrames) * this->_chnNum, buf.size());
+            }
+            else
+            {
+                for (int ch = 0; ch < this->_chnNum; ch++)
+                {
+                    this->fromFloat32(buffer + static_cast<long>(wrFrames) * this->_chnNum + ch,
+                        buf.data(), nFrames, ch, this->_chnNum);
+                }
+            }
+        }
+        else
+        {
+            if (this->_type == SampleType::IEEE64)
+            {
+                std::memcpy(buf.data(), buffer + static_cast<long>(wrFrames) * this->_chnNum, buf.size());
+            }
+            else
+            {
+                for (int ch = 0; ch < this->_chnNum; ch++)
+                {
+                    this->fromFloat32(buffer + static_cast<long>(wrFrames) * this->_chnNum + ch,
+                        buf.data(), nFrames, ch, this->_chnNum);
+                }
+            }
+        }
+        wrFrames += nFrames;
+        this->_pRing->releaseWriteBuffer();
+    }
+    return wrFrames * this->_chnNum;
+}
+
+
+

@@ -29,7 +29,7 @@ MemoryStream::MemoryStream(int size)
 }
 
 MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool visiable)
-	:_buffer{nullptr}, _ptr{data},_capacity{ dataLen }, _length{ offset + count }, _origin{ offset }, _expandable{ visiable }
+	:_buffer{ nullptr }, _ptr{ data }, _capacity{ 0 }, _length{ 0 }, _origin{ 0 }, _expandable{ false }, _isOpen{ true }
 {
 	if (data == nullptr || dataLen < 0 || offset < 0 || count < 0
 		|| offset > dataLen - count)
@@ -37,39 +37,14 @@ MemoryStream::MemoryStream(char* data, int dataLen, int offset, int count, bool 
 		throw std::runtime_error("入参错误");
 	}
 
+	this->_origin = offset;
+	this->_capacity = offset + count;   //与 .NET 一致：视图流的容量等于视图长度
+	this->_length = offset + count;
+	this->_expandable = visiable;       //保留原设计：该参数决定视图流是否可扩容
 	this->_writeable = true;
 	this->_readable = true;
 	this->_seekable = true;
 	this->_position = offset;
-}
-
-MemoryStream::MemoryStream(MemoryStream &&other) noexcept
-	: Stream(std::move(other)), _buffer{ std::move(other._buffer) }, 
-	_ptr{ other._ptr }, _capacity{ other._capacity }, _length{ other._length }, 
-	_origin{ other._origin }, _expandable{ other._expandable }, _isOpen{ other._isOpen } 
-{
-	other._isOpen = false;
-	other._ptr = nullptr;
-
-}
-
-MemoryStream &MemoryStream::operator=(MemoryStream &&other) noexcept
-{
-	if(this != &other)
-	{
-		Stream::operator=(std::move(other));
-		this->_buffer = std::move(other._buffer);
-		this->_ptr = other._ptr;
-		this->_capacity = other._capacity;
-		this->_length = other._length;
-		this->_origin = other._origin;
-		this->_expandable = other._expandable;
-		this->_isOpen = other._isOpen;
-
-		other._isOpen = false;
-		other._ptr = nullptr;
-	}
-	return *this;
 }
 
 MemoryStream::~MemoryStream()
@@ -77,38 +52,34 @@ MemoryStream::~MemoryStream()
 	this->_ptr = nullptr;
 }
 
-std::expected<long, std::string> MemoryStream::getLength()
+long MemoryStream::getLength()
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	return this->_length - this->_origin;
 }
 
-std::expected<void, std::string> MemoryStream::setLength(long value)
+void MemoryStream::setLength(long value)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	if (value < 0)
 	{
-		return std::unexpected("设置长度不允许小于0");
+		throw std::runtime_error("设置长度不允许小于0");
 	}
 	if (value > MaxStreamLength || value > MaxStreamLength - this->_origin)
 	{
-		return std::unexpected("长度超出最大限制");
+		throw std::runtime_error("长度超出最大限制");
 	}
 
 	long newLength = this->_origin + value;
-	auto capResult = this->ensureCapacity(newLength);
-	if (!capResult)
-	{
-		return std::unexpected(capResult.error());
-	}
+	bool realloced = this->ensureCapacity(newLength);  //失败抛出异常
 	//没有新分配数组时，扩展出的部分需要显式清零
-	if (!capResult.value() && newLength > this->_length)
+	if (!realloced && newLength > this->_length)
 	{
 		std::memset(this->_ptr + this->_length, 0, newLength - this->_length);
 	}
@@ -117,35 +88,33 @@ std::expected<void, std::string> MemoryStream::setLength(long value)
 	{
 		this->_position = this->_length;
 	}
-	return {};
 }
 
-std::expected<long, std::string> MemoryStream::getPosition()
+long MemoryStream::getPosition()
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	return this->_position - this->_origin;
 }
 
-std::expected<void, std::string> MemoryStream::setPosition(long value)
+void MemoryStream::setPosition(long value)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	if (value < 0)
 	{
-		return std::unexpected("设置值必须是正数");
+		throw std::runtime_error("设置值必须是正数");
 	}
 	if (value > MaxStreamLength - this->_origin)
 	{
-		return std::unexpected("位置超出最大限制");
+		throw std::runtime_error("位置超出最大限制");
 	}
 
 	this->_position = this->_origin + value;
-	return {};
 }
 
 long MemoryStream::getCapacity()
@@ -157,27 +126,27 @@ long MemoryStream::getCapacity()
 	return this->_capacity - this->_origin;
 }
 
-std::expected<long, std::string> MemoryStream::setCapacity(long value)
+long MemoryStream::setCapacity(long value)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	if (value < 0)
 	{
-		return std::unexpected("容量不能为负数");
+		throw std::runtime_error("容量不能为负数");
 	}
 	if (value < this->_length - this->_origin)
 	{
-		return std::unexpected("新容量不能小于当前长度");
+		throw std::runtime_error("新容量不能小于当前长度");
 	}
 	if (value > MaxStreamLength - this->_origin)
 	{
-		return std::unexpected("容量超出最大限制");
+		throw std::runtime_error("容量超出最大限制");
 	}
 	if (!this->_expandable && value != this->_capacity - this->_origin)
 	{
-		return std::unexpected("流不支持扩容");
+		throw std::runtime_error("流不支持扩容");
 	}
 
 	long newCapacity = this->_origin + value;
@@ -196,16 +165,16 @@ std::expected<long, std::string> MemoryStream::setCapacity(long value)
 }
 
 
-std::expected<void, std::string> MemoryStream::flush()
+void MemoryStream::flush()
 {
-	return {};
+	return;
 }
 
-std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin origin)
+long MemoryStream::seek(long offset, SeekOrigin origin)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 
 	long base;
@@ -223,45 +192,44 @@ std::expected<long, std::string> MemoryStream::seek(long offset, SeekOrigin orig
 	}
 	else
 	{
-		return std::unexpected("origin参数不合法");
+		throw std::runtime_error("origin参数不合法");
 	}
 
 	long long sum = static_cast<long long>(base) + offset;
 	if (sum < this->_origin)
 	{
-		return std::unexpected("seek超过了起始位置");
+		throw std::runtime_error("seek超过了起始位置");
 	}
 	if (sum > MaxStreamLength)
 	{
-		return std::unexpected("seek超出最大位置");
+		throw std::runtime_error("seek超出最大位置");
 	}
 	this->_position = static_cast<long>(sum);
 	return this->_position - this->_origin;
 }
 
-std::expected<void, std::string> MemoryStream::close()
+void MemoryStream::close()
 {
 	this->_isOpen = false;
 	this->_readable = false;
 	this->_writeable = false;
 	this->_seekable = false;
 	this->_expandable = false;
-	return {};
 }
 
-std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size, int offset, int count)
+long MemoryStream::basic_read(char* buffer, int size, int offset, int count)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	if (this->canRead() == false)
 	{
-		return std::unexpected("不支持读取");
+		throw std::runtime_error("不支持读取");
 	}
 	if (offset < 0 || size < 0 || count < 0 || offset > size - count)
 	{
-		return std::unexpected("输入参数不合法");
+		throw std::runtime_error("输入参数不合法");
 	}
 	//剩余空间
 	auto num = this->_length - this->_position;
@@ -290,19 +258,19 @@ std::expected<long, std::string> MemoryStream::basic_read(char* buffer, int size
 }
 
 
-std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, int size, int offset, int count)
+long MemoryStream::basic_write(const char* buffer, int size, int offset, int count)
 {
 	if (!this->_isOpen)
 	{
-		return std::unexpected(ClosedMsg);
+		throw std::runtime_error(ClosedMsg);
 	}
 	if (this->canWrite() == false)
 	{
-		return std::unexpected("不支持写入");
+		throw std::runtime_error("不支持写入");
 	}
 	if (offset < 0 || size < 0 || count < 0 || offset > size - count)
 	{
-		return std::unexpected("输入参数不合法");
+		throw std::runtime_error("输入参数不合法");
 	}
 	if (count == 0)
 	{
@@ -312,7 +280,7 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 	long long i = static_cast<long long>(this->_position) + count;
 	if (i > MaxStreamLength)
 	{
-		return std::unexpected("位置溢出");
+		throw std::runtime_error("位置溢出");
 	}
 
 	if (i > this->_length)
@@ -320,12 +288,8 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 		bool mustZero = this->_position > this->_length;
 		if (i > this->_capacity)
 		{
-			auto capResult = this->ensureCapacity(static_cast<long>(i));
-			if (!capResult)
-			{
-				return std::unexpected(capResult.error());
-			}
-			if (capResult.value())
+			bool realloced = this->ensureCapacity(static_cast<long>(i));  //失败抛出异常
+			if (realloced)
 			{
 				mustZero = false;  //新数组本身已被清零
 			}
@@ -355,15 +319,15 @@ std::expected<long, std::string> MemoryStream::basic_write(const char* buffer, i
 	return count;
 }
 
-std::expected<bool, std::string> MemoryStream::ensureCapacity(long value)
+bool MemoryStream::ensureCapacity(long value)
 {
 	if (value < 0)
 	{
-		return std::unexpected("容量不能为负数");
+		throw std::runtime_error("容量不能为负数");
 	}
 	if (value > MaxStreamLength)
 	{
-		return std::unexpected("容量超出最大限制");
+		throw std::runtime_error("容量超出最大限制");
 	}
 	if (value <= this->_capacity)
 	{
@@ -371,7 +335,7 @@ std::expected<bool, std::string> MemoryStream::ensureCapacity(long value)
 	}
 	if (!this->_expandable)
 	{
-		return std::unexpected("流不支持扩容");
+		throw std::runtime_error("流不支持扩容");
 	}
 
 	long newCapacity = (std::max)(value, 256L);
@@ -392,10 +356,6 @@ std::expected<bool, std::string> MemoryStream::ensureCapacity(long value)
 		newCapacity = value;
 	}
 
-	auto result = this->setCapacity(newCapacity - this->_origin);
-	if (!result)
-	{
-		return std::unexpected(result.error());
-	}
+	this->setCapacity(newCapacity - this->_origin);
 	return true;
 }

@@ -1,8 +1,10 @@
 #include"waveFormat.h"
 #include<stdexcept>
+#include<cstring>
+#include"ByteBuffer.h"
 
-//检查返回值如果失败返回错误
-#define CHECK_RESULT(result) if (!result) { return std::unexpected{ result.error() }; }
+//仅在当前翻译单元定义 GUID 实体(供下方 DEFINE_GUID 生成定义,避免污染其它 TU)
+#include<initguid.h>
 
 
 //具体实现
@@ -35,15 +37,15 @@ WaveFormat::WaveFormat(int _sampleRate, int _bitdepth, int _channels)
     }
 }
 
+//流应位于 fmt chunk 的 chunkSize 字段处
 WaveFormat::WaveFormat(Stream& reader)
 {
     BinaryStream br(&reader);
-    int formatChunkLength = br.readInt32().value();
-    auto result = this->readFormat(&reader, formatChunkLength);
-    if (!result)
-    {
-        throw std::runtime_error(result.error());
-    }
+    int formatChunkLength = br.readInt32();
+    //读取 format 标签(readFormat 默认从 channels 开始,标签须由调用者消费)
+    auto tag = br.readUInt16();
+    this->waveFormatTag = tag;
+    this->readFormat(&reader, formatChunkLength);
 }
 
 int WaveFormat::mills2Bytes(int mills)
@@ -88,7 +90,7 @@ std::string WaveFormat::toString() const
 
 }
 
-bool WaveFormat::operator==(const WaveFormat& fmt)
+bool WaveFormat::operator==(const WaveFormat& fmt) const
 {
     return this->waveFormatTag == fmt.waveFormatTag &&
         this->channels == fmt.channels &&
@@ -97,7 +99,7 @@ bool WaveFormat::operator==(const WaveFormat& fmt)
         this->bitsPerSample == fmt.bitsPerSample;
 }
 
-bool WaveFormat::operator!=(const WaveFormat& fmt)
+bool WaveFormat::operator!=(const WaveFormat& fmt) const
 {
     return !(*this == fmt);
 }
@@ -124,95 +126,85 @@ WAVEFORMATEX WaveFormat::toWaveFormatEx() const
 }
 
 //从stream中读取waveformat, 输入读取的字节数量
-std::expected<void, std::string> WaveFormat::readFormat(Stream* stream, int chunkSize)
+//流应位于 format 内容的 waveFormatTag 字段处(chunkSize 之后),tag 由调用者消费
+//一次性读入整个 fmt 内容进 ByteBuffer, 再用内置 API 按类型解析(缓冲区模式, 数值转换 100% 成功)
+void WaveFormat::readFormat(Stream* stream, int chunkSize)
 {
     if (chunkSize < 16)
     {
-        return std::unexpected("Invalid WaveFormat Structure");
+        throw std::runtime_error("Invalid WaveFormat Structure");
     }
-    BinaryStream br(stream);
-    try
-    {  
-        //waveFormatTag = br.tryRead<std::uint16_t>();
-        channels = br.tryRead<std::int16_t>();
-        sampleRate = br.tryRead<std::int32_t>();
-        bytesPerSec = br.tryRead<std::int32_t>();
-        blockAlign = br.tryRead<std::int16_t>();
-        bitsPerSample = br.tryRead<std::int16_t>();
-        if (chunkSize > 16)
-        {
-            //扩展的情况下这里会是两个字节的代表扩展长度
-            extraSize = br.tryRead<std::int16_t>();
-            if (extraSize != chunkSize - 18)
-            {
-                extraSize = (short)(chunkSize - 18);
-            }
-        }
-        else
-        {
-            extraSize = -1; //表示没有扩展块,跟扩展块是0进行区分
-        }
-    }catch(const std::exception& ex)
+    if (chunkSize > (1 << 20))
     {
-        return std::unexpected{ ex.what() };
+        throw std::runtime_error("fmt chunk 过大");
     }
 
+    //tag(2字节)已由调用者读取,剩余内容长度为 chunkSize - 2
+    int bodySize = chunkSize - 2;
+    ByteBuffer bb = ByteBuffer::allocate(static_cast<size_t>(bodySize));
+    long n = stream->read(bb.data(), bodySize);
+    if (n < bodySize)
+    {
+        throw std::runtime_error("fmt 数据长度不足");
+    }
 
-    return {};
+    channels = static_cast<short>(bb.readUInt16());
+    sampleRate = bb.readInt32();
+    bytesPerSec = bb.readInt32();
+    blockAlign = static_cast<short>(bb.readUInt16());
+    bitsPerSample = static_cast<short>(bb.readUInt16());
+    if (chunkSize > 16)
+    {
+        extraSize = static_cast<short>(bb.readUInt16());
+        if (extraSize != chunkSize - 18)
+        {
+            extraSize = static_cast<short>(chunkSize - 18);
+        }
+        //扩展数据(原 WaveFormatExtraData 的功能已并入基类)
+        size_t left = bb.remaining();
+        if (left > 0)
+        {
+            auto sp = bb.readableSpan(left);
+            this->extraData.assign(sp.begin(), sp.end());
+        }
+    }
+    else
+    {
+        extraSize = -1; //表示没有扩展块,跟扩展块是0进行区分
+    }
 }
 
-std::expected<void, std::string> WaveFormat::writeTo(Stream* stream)
+void WaveFormat::writeTo(Stream* stream)
 {
-    BinaryStream writer(stream);
-    try
+    //一次性构建整个 fmt 头(含 4 字节 chunkSize 字段)再写入, 避免多次小写入
+    ByteBuffer bb = ByteBuffer::allocate(32 + this->extraData.size());
+
+    if (this->extraSize == -1)
     {
-        char buffer[22] = {0};
-        int offset = 0;
-        int size = 0;
-        if (this->extraSize == -1)
+        bb.writeUInt32(16);
+    }
+    else
+    {
+        bb.writeUInt32(18 + this->extraSize);
+    }
+    bb.writeUInt16(static_cast<std::uint16_t>(this->waveFormatTag));
+    bb.writeUInt16(static_cast<std::uint16_t>(this->channels));
+    bb.writeUInt32(static_cast<std::uint32_t>(this->sampleRate));
+    bb.writeUInt32(static_cast<std::uint32_t>(this->bytesPerSec));
+    bb.writeUInt16(static_cast<std::uint16_t>(this->blockAlign));
+    bb.writeUInt16(static_cast<std::uint16_t>(this->bitsPerSample));
+    if (this->extraSize != -1)
+    {
+        bb.writeUInt16(static_cast<std::uint16_t>(this->extraSize));
+        //扩展数据:非 Extensible 格式的原始 extra 数据写在这里;
+        //Extensible 的扩展是结构化字段,由子类 writeTo 写入,其 extraData 保持为空
+        if (!this->extraData.empty())
         {
-            //writer.tryWrite(int32_t(16));
-            size = 16;
-            memcpy(buffer + offset, &size, sizeof(int32_t));    offset += sizeof(int32_t);
-        }
-        else
-        {
-            //writer.tryWrite(int32_t(18 + this->extraSize));
-            size = 18 + this->extraSize;
-            memcpy(buffer + offset, &size, sizeof(int32_t));    offset += sizeof(int32_t);
-        }
-        //writer.tryWrite(int16_t(this->waveFormatTag));
-        memcpy(buffer + offset, &this->waveFormatTag, sizeof(int16_t));  offset += sizeof(int16_t);
-        //writer.tryWrite(int16_t(this->channels));
-        memcpy(buffer + offset, &this->channels, sizeof(int16_t));   offset += sizeof(int16_t);
-        //writer.tryWrite(int32_t(this->sampleRate));
-        memcpy(buffer + offset, &this->sampleRate, sizeof(int32_t)); offset += sizeof(int32_t);
-        //writer.tryWrite(int32_t(this->bytesPerSec));
-        memcpy(buffer + offset, &this->bytesPerSec, sizeof(int32_t));   offset += sizeof(int32_t);
-        //writer.tryWrite(int16_t(this->blockAlign));
-        memcpy(buffer + offset, &this->blockAlign, sizeof(int16_t));    offset += sizeof(int16_t);
-        //writer.tryWrite(int16_t(this->bitsPerSample));
-        memcpy(buffer + offset, &this->bitsPerSample, sizeof(int16_t));    offset += sizeof(int16_t);
-        if (this->extraSize != -1)
-        {
-            //writer.tryWrite(int16_t(this->extraSize));
-            memcpy(buffer + offset, &this->extraSize, sizeof(int16_t));    offset += sizeof(int16_t); 
-            stream->write(buffer, offset);
-            auto ret = stream->write(this->extraData.data(), static_cast<int>(this->extraData.size()));
-            if (!ret)
-            {
-                return std::unexpected{ "Failed to write extra data" };
-            }
-        }else
-        {
-            stream->write(buffer, offset);
+            bb.writeBytes(this->extraData.data(), this->extraData.size());
         }
     }
-    catch (const std::exception& ex)
-    {
-        return std::unexpected{ ex.what() };
-    }
-	return {};
+
+    stream->write(bb.data(), static_cast<int>(bb.position()));
 }
 
 std::unique_ptr<WaveFormat> WaveFormat::clone() const
@@ -240,80 +232,23 @@ WaveFormat WaveFormat::createFloatWaveFormat(int sampleRate, int channels)
 
 std::unique_ptr<WaveFormat> WaveFormat::fromFormatChunk(Stream& br, int formatChunkLength)
 {
-	std::unique_ptr<WaveFormat> fmt;
+	//流位于 fmt chunk 内容起始(chunkSize 之后), 先读取 format tag 用于分派
     BinaryStream bs(&br);
-	auto result = bs.readUInt16(); //CHECK_RESULT(result);
-	auto fmtTag = result.value();
+	auto fmtTag = bs.readUInt16();
+    std::unique_ptr<WaveFormat> fmt;
     if(fmtTag == WaveFormatEncoding::Extensible)
     {
 		fmt = std::make_unique<WaveFormatExtensible>();
     }
-    else if (formatChunkLength > 16)
-    {
-		fmt = std::make_unique<WaveFormatExtraData>();
-    }
     else
     {
+		//非 Extensible:即使 chunkSize>16 带有扩展数据,也由基类直接承载(原 WaveFormatExtraData 已合并)
 		fmt = std::make_unique<WaveFormat>();
 	}
-	auto ret = fmt->readFormat(&br, formatChunkLength);   //CHECK_RESULT(ret);
+	//读取到的 tag 必须写回格式对象(原代码遗漏,导致解析后 tag 恒为默认的 PCM)
+	fmt->waveFormatTag = fmtTag;
+	fmt->readFormat(&br, formatChunkLength);  //失败抛出异常
     return fmt;
-}
-
-WaveFormatExtraData::WaveFormatExtraData(Stream& stream)
-    :WaveFormat(stream)
-{
-    if (this->extraSize > 0)
-    {
-        extraData.resize(this->extraSize);
-        auto result = stream.read(extraData.data(), this->extraSize);
-        if (!result)
-        {
-            throw std::runtime_error("Failed to read extra data");
-        }
-    }
-}
-
-std::unique_ptr<WaveFormat> WaveFormatExtraData::clone() const
-{
-    return std::make_unique<WaveFormatExtraData>(*this);
-}
-
-std::expected<void, std::string> WaveFormatExtraData::readFormat(Stream* stream, int chunkSize)
-{
-    auto result = this->WaveFormat::readFormat(stream, chunkSize); CHECK_RESULT(result);
-    if (this->extraSize > 0)
-    {
-        this->extraData.resize(this->extraSize);
-        auto ret = stream->read(this->extraData.data(), this->extraSize);
-        CHECK_RESULT(ret);
-    }
-    return {};
-}
-
-std::expected<void, std::string> WaveFormatExtraData::writeTo(Stream* stream)
-{
-    auto result = this->WaveFormat::writeTo(stream);
-    if (!result)
-    {
-        return result;
-    }
-
-    if (this->extraSize > 0)
-    {
-        auto ret = stream->write(this->extraData.data(), static_cast<int>(this->extraData.size()));
-        if (!ret)
-        {
-            return std::unexpected{ "Failed to write extra data" };
-        }
-    }
-
-    return {};
-}
-
-std::vector<char>& WaveFormatExtraData::getextraData()
-{
-    return this->extraData;
 }
 
 
@@ -405,40 +340,37 @@ std::unique_ptr<WaveFormat> WaveFormatExtensible::clone() const
     return std::make_unique<WaveFormatExtensible>(*this);
 }
 
-std::expected<void, std::string> WaveFormatExtensible::readFormat(Stream* stream, int chunkSize)
+void WaveFormatExtensible::readFormat(Stream* stream, int chunkSize)
 {
-    auto result = this->WaveFormat::readFormat(stream, chunkSize); CHECK_RESULT(result);
-    BinaryStream bs(stream);
+    //基类读取 tag 之后的字段 + extraSize + 22 字节扩展原始数据(存入 extraData)
+    this->WaveFormat::readFormat(stream, chunkSize);
 
-    try
+    //从 extraData 中解析 WAVEFORMATEXTENSIBLE 结构化字段,避免重复读取流
+    if (this->extraData.size() < 22)
     {
-        this->wValidBitsPerSample = bs.tryRead<short>();
-        this->dwChannelMask = bs.tryRead<int>();
-        this->subFormat.Data1 = bs.tryRead<int>();
-        this->subFormat.Data2 = bs.tryRead<short>();
-        this->subFormat.Data3 = bs.tryRead<short>();
+        throw std::runtime_error("Extensible 扩展数据不足 22 字节");
     }
-    catch (const std::exception& ex)
-    {
-        return std::unexpected{ ex.what() };
-    }
-
-    auto ret = stream->read(reinterpret_cast<char*>(this->subFormat.Data4), 8); CHECK_RESULT(ret);
-
-    return {};
+    const char* p = this->extraData.data();
+    std::memcpy(&this->wValidBitsPerSample, p, 2);
+    std::memcpy(&this->dwChannelMask, p + 2, 4);
+    std::memcpy(&this->subFormat.Data1, p + 6, 4);
+    std::memcpy(&this->subFormat.Data2, p + 10, 2);
+    std::memcpy(&this->subFormat.Data3, p + 12, 2);
+    std::memcpy(this->subFormat.Data4, p + 14, 8);
+    //解析完成后清空,writeTo 由子类写入结构化字段,避免重复输出
+    this->extraData.clear();
 }
 
-std::expected<void, std::string> WaveFormatExtensible::writeTo(Stream* stream)
+void WaveFormatExtensible::writeTo(Stream* stream)
 {
-    auto ret = this->WaveFormat::writeTo(stream); CHECK_RESULT(ret);
+    this->WaveFormat::writeTo(stream);
     
     BinaryStream bs(stream);
-    auto result = bs.write(this->wValidBitsPerSample); CHECK_RESULT(result);
-    result = bs.write(this->dwChannelMask); CHECK_RESULT(result);
-    result = bs.write(this->subFormat.Data1); CHECK_RESULT(result);
-    result = bs.write(this->subFormat.Data2); CHECK_RESULT(result);
-    result = bs.write(this->subFormat.Data3); CHECK_RESULT(result);
+    bs.write(this->wValidBitsPerSample);
+    bs.write(this->dwChannelMask);
+    bs.write(this->subFormat.Data1);
+    bs.write(this->subFormat.Data2);
+    bs.write(this->subFormat.Data3);
 
-    result = stream->write(reinterpret_cast<char*>(this->subFormat.Data4), 8); CHECK_RESULT(result);
-    return {};
+    stream->write(reinterpret_cast<char*>(this->subFormat.Data4), 8);
 }
