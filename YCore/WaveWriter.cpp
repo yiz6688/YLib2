@@ -91,12 +91,12 @@ int WaveWriter::writeFloat(double* buffer, int sampleNum)
 //原生类型交织写入: 直接写原始字节到 stream
 int WaveWriter::writeRaw(Sample& sample, int sampleNum)
 {
-	if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
+	if (sample._raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
 	{
 		return 0;
 	}
 	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
-	long wr = this->_stream->write(sample.raw, sampleNum * frameSize);  //失败抛出异常
+	long wr = this->_stream->write(sample._raw, sampleNum * frameSize);  //失败抛出异常
 	return static_cast<int>(wr) / frameSize;
 }
 

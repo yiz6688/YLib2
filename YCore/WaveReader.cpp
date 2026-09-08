@@ -100,12 +100,12 @@ int WaveReader::readFloat(double* buffer, int sampleNum)
 //原生类型交织读取: 直接读原始字节到 sample.raw
 int WaveReader::readRaw(Sample& sample, int sampleNum)
 {
-	if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
+	if (sample._raw == nullptr || sampleNum <= 0 || sample._type != this->_storageType)
 	{
 		return 0;
 	}
 	const int frameSize = this->_stream->getWaveFormat().getBlockAlign();
-	long rr = this->_stream->read(sample.raw, sampleNum * frameSize);  //失败抛出异常
+	long rr = this->_stream->read(sample._raw, sampleNum * frameSize);  //失败抛出异常
 	return static_cast<int>(rr) / frameSize;
 }
 

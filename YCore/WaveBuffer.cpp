@@ -70,11 +70,11 @@ int WaveBuffer::readSample(WaveMix &mix, int sampleNum)
             auto src = buf.data();  //起始指针位置
             if(mix._type == SampleType::IEEE32)
             {
-                auto dest = sample.pf + rdFrames;
+                auto dest = reinterpret_cast<float*>(sample._raw) + rdFrames;
                 this->toFloat32(src, dest, nFrames, sample._chnInx);
             }else
             {
-                auto dest = sample.pd + rdFrames;
+                auto dest = reinterpret_cast<double*>(sample._raw) + rdFrames;
                 this->toFloat32(src, dest, nFrames, sample._chnInx);
             }
         }
@@ -111,11 +111,11 @@ int WaveBuffer::writeSample(WaveMix &mix, int sampleNum)
             //源采样类型由 mix 决定(浮点/双精度),而不是缓冲区存储类型
             if(mix._type == SampleType::IEEE32)
             {
-                auto src = sample.pf + rdFrames;
+                auto src = reinterpret_cast<float*>(sample._raw) + rdFrames;
                 this->fromFloat32(src, dest, nFrames, sample._chnInx);
             }else
             {
-                auto src = sample.pd + rdFrames;
+                auto src = reinterpret_cast<double*>(sample._raw) + rdFrames;
                 this->fromFloat32(src, dest, nFrames, sample._chnInx);
             }
         }
@@ -153,7 +153,7 @@ int WaveBuffer::readRaw(WaveMix &mix, int sampleNum)
         for(auto& sample : samples)
         {
             auto src = buf.data() + sample._chnInx * this->_byteDepth;  //起始指针位置
-            auto dest = sample.raw + rdFrames * this->_byteDepth;
+            auto dest = sample._raw + rdFrames * this->_byteDepth;
             for(int i=0; i<nFrames; i++)
             {
                 std::copy_n(src, this->_byteDepth, dest);
@@ -194,7 +194,7 @@ int WaveBuffer::writeRaw(WaveMix &mix, int sampleNum)
         for(auto& sample : samples)
         {
             auto src = buf.data() + sample._chnInx * this->_byteDepth;  //起始指针位置
-            auto dest = sample.raw + rdFrames * this->_byteDepth;
+            auto dest = sample._raw + rdFrames * this->_byteDepth;
             for(int i=0; i<nFrames; i++)
             {
                 std::copy_n(dest, this->_byteDepth, src);
@@ -251,7 +251,7 @@ int WaveBuffer::releaseWriteBuffer()
 //交织原始数据读取: 直接拷贝环形区交织字节到 sample.raw, 返回读出的帧数
 int WaveBuffer::readRaw(Sample& sample, int sampleNum)
 {
-    if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_type)
+    if (sample._raw == nullptr || sampleNum <= 0 || sample._type != this->_type)
     {
         return 0;
     }
@@ -265,7 +265,7 @@ int WaveBuffer::readRaw(Sample& sample, int sampleNum)
             break;
         }
         int nFrames = buf.size() / this->_frameSize;
-        std::memcpy(sample.raw + static_cast<long>(rdFrames) * this->_frameSize,
+        std::memcpy(sample._raw + static_cast<long>(rdFrames) * this->_frameSize,
             buf.data(), static_cast<size_t>(nFrames) * this->_frameSize);
         rdFrames += nFrames;
         this->_pRing->releaseReadBuffer();
@@ -276,7 +276,7 @@ int WaveBuffer::readRaw(Sample& sample, int sampleNum)
 //交织原始数据写入: 直接拷贝 sample.raw 交织字节到环形区, 返回写入的帧数
 int WaveBuffer::writeRaw(Sample& sample, int sampleNum)
 {
-    if (sample.raw == nullptr || sampleNum <= 0 || sample._type != this->_type)
+    if (sample._raw == nullptr || sampleNum <= 0 || sample._type != this->_type)
     {
         return 0;
     }
@@ -290,7 +290,7 @@ int WaveBuffer::writeRaw(Sample& sample, int sampleNum)
             break;
         }
         int nFrames = buf.size() / this->_frameSize;
-        std::memcpy(buf.data(), sample.raw + static_cast<long>(wrFrames) * this->_frameSize,
+        std::memcpy(buf.data(), sample._raw + static_cast<long>(wrFrames) * this->_frameSize,
             static_cast<size_t>(nFrames) * this->_frameSize);
         wrFrames += nFrames;
         this->_pRing->releaseWriteBuffer();

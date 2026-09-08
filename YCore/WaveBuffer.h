@@ -13,20 +13,48 @@
 
 struct Sample
 {
-    union
-    {
-        double* pd;
-        float*  pf;
-        int*    pi;
-        int24*  pt;
-        short*  ps;
-        char*   raw;
-    };
+    // union
+    // {
+    //     double* pd;
+    //     float*  pf;
+    //     int*    pi;
+    //     int24*  pt;
+    //     short*  ps;
+    //     char*   raw;
+    // };
 
+public:
+    Sample(short* ptr, int chInx=-1)
+        :_raw(reinterpret_cast<char*>(ptr)), _chnInx(chInx), _type(SampleType::INT16)
+    {}
+
+    Sample(int24* ptr, int chInx=-1)
+        :_raw(reinterpret_cast<char*>(ptr)), _chnInx(chInx), _type(SampleType::INT24)
+    {}  
+
+    Sample(int* ptr, int chInx=-1)
+        :_raw(reinterpret_cast<char*>(ptr)), _chnInx(chInx), _type(SampleType::INT32)
+    {}
+
+    Sample(float* ptr, int chInx=-1)
+        :_raw(reinterpret_cast<char*>(ptr)), _chnInx(chInx), _type(SampleType::IEEE32)
+    {}
+
+    Sample(double* ptr, int chInx=-1)
+        :_raw(reinterpret_cast<char*>(ptr)), _chnInx(chInx), _type(SampleType::IEEE64)
+    {}
+
+    Sample(char* ptr, int chInx=-1)
+        :_raw(ptr), _chnInx(chInx), _type(SampleType::UNKNOWN)
+    {}
+
+    char* _raw;
+
+    int _chnInx;
 
     SampleType _type;
 
-    int _chnInx;
+
 
 };
 

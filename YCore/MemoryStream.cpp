@@ -208,13 +208,14 @@ long MemoryStream::seek(long offset, SeekOrigin origin)
 	return this->_position - this->_origin;
 }
 
-void MemoryStream::close()
+std::expected<void, std::string> MemoryStream::inner_close()
 {
 	this->_isOpen = false;
 	this->_readable = false;
 	this->_writeable = false;
 	this->_seekable = false;
 	this->_expandable = false;
+	return {};
 }
 
 long MemoryStream::basic_read(char* buffer, int size, int offset, int count)

@@ -9,7 +9,42 @@ class BitConverter
 {
 public:
 
+
+	static std::vector<int> toVec(unsigned value)
+	{
+		std::vector<int> vec;
+		int num = 0;
+		while (value > 0)
+		{
+			num++;
+			if ((value & 0x1) == 0x1)
+			{
+				vec.push_back(num);
+			}
+			value >>= 1;
+		}
+		return vec;
+	}
 	//其他类型转字节数组
+	static std::vector<int> getBitIndex(unsigned value)
+	{
+		std::vector<int> result;
+		unsigned idx = 0;
+		while (value) {
+			if (value & 1u) result.push_back(idx);
+			value >>= 1;
+			++idx;
+		}
+		return result;
+	}
+
+	unsigned setBitIndex(const std::vector<int>& inxs) {
+		unsigned value = 0;
+		for (unsigned i : inxs) 
+			value |= (1u << i);
+		return value;
+	}
+
 
 	//字节数组转其他类型(异常模式: 越界/空指针抛出 std::runtime_error)
 

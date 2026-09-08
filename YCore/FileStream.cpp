@@ -56,7 +56,8 @@ FileStream& FileStream::operator=(FileStream&& other) noexcept
 {
 	if (this != &other)
 	{
-		this->close(); //不处理返回值
+		auto r = this->inner_close();  //noexcept 中不能抛, 静默回收
+		(void)r;
 		Stream::operator=(static_cast<Stream&&>(other));
 		this->_fileMode = other._fileMode;
 		this->_fileAccess = other._fileAccess;
@@ -86,26 +87,43 @@ FileStream::~FileStream()
 	this->_readable = false;
 	this->_writeable = false;
 	this->_seekable = false;
-	this->close(); //best-effort, 不抛异常
+	auto r = this->inner_close();  //静默回收, 不抛异常(析构/栈展开安全)
+	(void)r;
 }
 
-//close 尽力关闭: 尽量 flush 落盘并关闭句柄, 不抛异常(避免析构/栈展开期间异常导致 terminate)
-void FileStream::close()
+//底层关闭实现: 尽力 flush 落盘 + 关闭句柄, 返回 combined error(供 close() 抛异常 / 析构静默)
+std::expected<void, std::string> FileStream::inner_close()
 {
 	if (this->_hFile != INVALID_HANDLE_VALUE)
 	{
+		std::string flushError;
 		try
 		{
 			this->flush(true);
 		}
-		catch (...)
+		catch (const std::exception& e)
 		{
-			//忽略 flush 失败, 继续关闭句柄
+			flushError = e.what();
 		}
 
-		CloseHandle(this->_hFile);
+		auto ret = CloseHandle(this->_hFile);
 		this->_hFile = INVALID_HANDLE_VALUE;
+		if (ret == FALSE)
+		{
+			auto closeError = WinUtils::getError("CloseHandle");
+			if (flushError.empty())
+	{
+				return std::unexpected(closeError);
+			}
+			return std::unexpected(flushError + " " + closeError);
+		}
+		if (!flushError.empty())
+		{
+			return std::unexpected(flushError);
+		}
 	}
+
+	return {};
 }
 
 void FileStream::setLength(long value)

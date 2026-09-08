@@ -23,6 +23,8 @@ Asio驱动的具体实现
 #include<array>
 #include<format>
 #include<bitset>
+#include"BitConverter.h"
+#include"NumUtils.h"
 
 using namespace std;
 
@@ -30,33 +32,6 @@ using namespace std;
 static constexpr int notifyMills = 20;   //系统通知的间隔
 static constexpr int bufferMills = 100;  //不超过缓冲区
 
-
-int nextpow2(int num)
-{
-	int result = 0x1;
-	num -= 1;
-	do
-	{
-		result <<= 1;
-	} while (num >>= 1);
-	return result;
-}
-
-static std::vector<int> toVec(unsigned value)
-{
-	std::vector<int> vec;
-	int num = 0;
-	while (value > 0)
-	{
-		num++;
-		if ((value & 0x1) == 0x1)
-		{
-			vec.push_back(num);
-		}
-		value >>= 1;
-	}
-	return vec;
-}
 
 static SampleType _getSampleType(ASIOSampleType asioType)
 {
@@ -135,7 +110,7 @@ std::expected<void, std::string> ASIODevice::loadInstance()
 	}
 
 
-	this->start_counter = 0;
+	//this->start_counter = 0;
 	this->bufferReady = false;
 
 	HRESULT hResult = CoCreateInstance(this->driverID, 0, CLSCTX_INPROC_SERVER, this->driverID, (LPVOID*)(&this->iasio));
@@ -214,7 +189,7 @@ std::expected<void, std::string> ASIODevice::deviceInit()
 
 
 	long notifySize = notifyMills * this->sampleRate / 1000; //乘以缓冲区
-	notifySize = nextpow2(notifySize);  //最接近的一个2的N次方
+	notifySize = NumUtils::nextpow2(notifySize);  //最接近的一个2的N次方
 	println("缓冲区1:{}", notifySize);
 	float xxx = notifySize * 1000 / this->sampleRate;
 	int k = bufferMills / xxx;
@@ -336,16 +311,14 @@ std::expected<void, std::string> ASIODevice::deviceRelease()
 /**
 *驱动创建缓冲区
 */
-std::expected<void, std::string> ASIODevice::createBuffer()
+TResult<void> ASIODevice::createBuffer()
 {
 	string errInfo = "";
 	bool bSuccess = false;
 	ASIOError error;
 	
 
-	//创建缓冲区数组,由createbuffer分配对应缓冲区的内存
-	//unique_ptr<ASIOBufferInfo[]> bufferInfos(new ASIOBufferInfo[this->total_channel]);
-
+	//如果不设置通道掩码，就默认创建所有通道
 	if (this->inputMask == 0 && this->outputMask == 0)
 	{
 		this->inputMask = 1 << this->num_of_capture;
@@ -354,8 +327,8 @@ std::expected<void, std::string> ASIODevice::createBuffer()
 		this->outputMask -= 1;
 	}
 
-	auto inputs = toVec(this->inputMask);
-	auto outputs = toVec(this->outputMask);
+	auto inputs = BitConverter::getBitIndex(this->inputMask);
+	auto outputs = BitConverter::getBitIndex(this->outputMask);
 	int inputSize = inputs.size();
 	int outputSize = outputs.size();
 
@@ -461,7 +434,8 @@ std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
 			}
 			else
 			{
-				if (this->runningCounter != 0)  //运行中不能处理
+				if(this->driverRuning)
+				//if (this->runningCounter != 0)  //运行中不能处理
 				{
 					return std::unexpected("驱动运行中,不允许以不同的采样率打开");
 				}
@@ -484,7 +458,7 @@ std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
 	return {};
 }
 
-std::expected<void, std::string> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask)
+TResult<void> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask)
 {
 	if (this->inputMask == 0 && this->outputMask == 0)
 	{
@@ -533,7 +507,7 @@ std::expected<void, std::string> ASIODevice::setChannelMask(unsigned inputMask, 
 	}
 }
 
-std::expected<void, std::string> ASIODevice::getSampleRate()
+TResult<void> ASIODevice::getSampleRate()
 {
 	ASIOSampleRate _sampleRate;
 	auto error = iasio->getSampleRate(&_sampleRate);
@@ -546,7 +520,7 @@ std::expected<void, std::string> ASIODevice::getSampleRate()
 	return {};
 }
 
-std::expected<void, std::string> ASIODevice::supportSampleRate(long value)
+TResult<void> ASIODevice::supportSampleRate(long value)
 {
 	auto error = this->iasio->canSampleRate(sampleRate);
 	if (error != ASE_OK)
@@ -560,10 +534,10 @@ std::expected<void, std::string> ASIODevice::supportSampleRate(long value)
 /**
 *设置采样率，运行中不允许设置采样率
 */
-std::expected<void, std::string> ASIODevice::setSampleRate(long value)
+TResult<void> ASIODevice::setSampleRate(long value)
 {
 	
-	if (this->runningCounter > 0)
+	if(this->driverRuning)
 	{
 		if (value == this->sampleRate)
 		{
@@ -589,53 +563,26 @@ std::expected<void, std::string> ASIODevice::setSampleRate(long value)
 }
 
 
-
-int ASIODevice::get_running_device()
-{
-
-	int counter = 0;
-
-	for (int i = 0; i < this->num_of_capture; i++)
-	{
-		//if (this->captures[i].start_flag == true)
-		{
-			counter++;
-		}
-	}
-
-	for (int i = 0; i < this->num_of_render; i++)
-	{
-		//if (this->renders[i].start_flag == true)
-		{
-			counter++;
-		}
-	}
-
-	return counter;
-}
-
-
 /**
 *调用驱动启动录音，重复调用增加引用计数
 */
-std::expected<void, std::string> ASIODevice::start()
+TResult<void> ASIODevice::start()
 {
-    if(this->runningCounter == 0)
+	if(this->driverRuning == false)
 	{
 		auto error = this->iasio->start();
 		if (error == ASE_OK)
 		{
-			this->runningCounter++;
+			this->driverRuning = true;
 			return {};
 		}
 		else
 		{
-			this->runningCounter = 0;
+			this->driverRuning = false;
 			return std::unexpected(std::format("start Fail, code: {}", error));
 		}
 	}else
 	{
-		this->runningCounter++;
 		return {};
 	}
 }
@@ -643,25 +590,22 @@ std::expected<void, std::string> ASIODevice::start()
 /**
 *调用驱动停止录音，重复调用减少引用计数，归零后调用停止
 */
-std::expected<void, std::string> ASIODevice::stop()
+TResult<void> ASIODevice::stop()
 {
-	if (this->runningCounter == 0)
+	if (this->driverRuning == false)
 	{
 		return {};
 	}
 
-	this->runningCounter--;
-	if (this->runningCounter == 0)
+
+	auto error = this->iasio->stop();
+	this->driverRuning = false;
+	if (error != ASE_OK)
 	{
-		auto error = this->iasio->stop();
-		if (error != ASE_OK)
-		{
-			return std::unexpected(std::format("stop Fail, code: {}", error));
-		}
+		return std::unexpected(std::format("stop Fail, code: {}", error));
 	}
-
+	
 	return {};
-
 }
 
 

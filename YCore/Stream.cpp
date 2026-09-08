@@ -6,6 +6,16 @@ Stream::Stream()
 
 }
 
+//正常关闭: 内部转调 inner_close, 失败抛出异常
+void Stream::close()
+{
+	auto r = this->inner_close();
+	if (!r)
+	{
+		throw std::runtime_error(r.error());
+	}
+}
+
 Stream::Stream(Stream&& other) noexcept
 	: _position(other._position), _readable(other._readable),
 	_writeable(other._writeable), _seekable(other._seekable)

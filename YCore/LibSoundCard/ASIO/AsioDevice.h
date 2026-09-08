@@ -14,6 +14,7 @@
 #include<expected>
 #include"ASIOChannel.h"
 #include"ASIOBuffer.h"
+#include"TResult.h"
 
 using std::initializer_list;
 
@@ -36,20 +37,20 @@ public:
 public:
 	
 	//加载驱动，不创建缓冲区
-	std::expected<void, std::string> loadInstance();
+	TResult<void> loadInstance();
 	
 	//驱动初始化
-	std::expected<void, std::string> deviceInit();   
+	TResult<void> deviceInit();   
 	//释放驱动，析构时调用
-	std::expected<void, std::string> deviceRelease();
+	TResult<void> deviceRelease();
 
 
 
 	//使用特定的采样率打开声卡
-	std::expected<void, std::string> driverOpen(int sampleRate);
+	TResult<void> driverOpen(int sampleRate);
 
 	//设置通道的掩码，输入输出最多支持32个，通道bit位为1，表示启用,只能设置一次。
-	std::expected<void, std::string> setChannelMask(unsigned inputMask, unsigned outputMask);
+	TResult<void> setChannelMask(unsigned inputMask, unsigned outputMask);
 
 public:
 	//驱动是否初始化的标志
@@ -92,9 +93,9 @@ public:
 	//每启动一次计数+1，每停止一次计数-1
 	//计数为0时，调用驱动start，计数非0 +1返回
 	//计数为1时 调用驱动stop，计数大于1 -1返回
-	unsigned start_counter;  //运行计数器
+	//unsigned start_counter;  //运行计数器
 
-	unsigned runningCounter = 0;  //运行计数器
+	//unsigned runningCounter = 0;  //运行计数器
 
 
 	//运行中的实例计数,每调用一次start，计数+1， 每调用一次stop，计数-1
@@ -109,7 +110,8 @@ public:
 
 	//缓冲区是否就绪标志
 	bool bufferReady;
-
+	//驱动运行标志
+	bool driverRuning;
 public:
 	//当前使用的缓冲区大小
 	long bufferSize;

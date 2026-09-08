@@ -29,9 +29,9 @@ public:
 
 	long seek(long offset, SeekOrigin origin) override;
 
-	void close() override;
-
 protected:
+	std::expected<void, std::string> inner_close() override;
+
 	long basic_read(char* buffer, int size, int offset, int count) override;
 
 	long basic_write(const char* data, int size, int offset, int count) override;

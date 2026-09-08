@@ -73,9 +73,7 @@ public:
 
 	~FileStream();
 
-	//异常模式: 失败抛出 std::runtime_error
-	void close() override;
-
+	//异常模式: close() 失败抛出 std::runtime_error; 析构/移动赋值静默(内部 inner_close)
 	void setLength(long value) override;
 
 	long getLength() override;
@@ -91,6 +89,9 @@ public:
 	long seek(long offset, SeekOrigin origin) override;
 
 protected:
+	//底层关闭实现(尽力 flush + 关句柄), 返回 expected; close() 抛异常, 析构/移动赋值静默
+	std::expected<void, std::string> inner_close() override;
+
 	long basic_read(char* data, int size, int offset, int count) override;
 
 	long basic_write(const  char* data, int size, int offset, int count) override;

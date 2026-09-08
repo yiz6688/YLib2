@@ -1,6 +1,7 @@
 #pragma once
 #include<string>
 #include<vector>
+#include<expected>
 #include<stdexcept>
 
 enum class SeekOrigin
@@ -29,8 +30,9 @@ public:
 	virtual ~Stream() = default;
 
 public:
-	//异常模式: 失败抛出 std::runtime_error, 成功返回裸值
-	virtual void close() = 0;
+	//正常关闭: 失败抛出 std::runtime_error(内部转调 inner_close)
+	virtual void close();
+
 	//获取流长度
 	virtual long getLength() = 0;
 
@@ -78,6 +80,9 @@ public:
 	long write(const char* data, int size);
 
 protected:
+	//底层关闭实现: 返回 expected, 供 close()(抛异常) 与 析构/移动赋值(静默) 复用
+	virtual std::expected<void, std::string> inner_close() = 0;
+
 	//c++重载后，同名函数就不显示了，设计两个基本的读写函数，其余的调用这两个函数。
 	//基本写方法
 	virtual long basic_write(const char* data, int size, int offset, int count) = 0;

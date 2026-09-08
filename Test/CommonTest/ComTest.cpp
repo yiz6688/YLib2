@@ -86,9 +86,10 @@ void waveBufferTest()
         lst.resize(chnNum);
         for(int i=0; i<chnNum; i++)
         {
-            Sample s;
             vector<I> vec(sampleNum);
-            s.ps = vec.data(); s._type = type; s._chnInx = i;
+            Sample s(vec.data(), i);
+            
+            //s.ps = vec.data(); s._type = type; s._chnInx = i;
             //lst.push_back(std::move(vec));
             lst[i] = std::move(vec);
             mix.add(s);
@@ -197,9 +198,10 @@ void waveBufferTest2()
         lst.resize(chnNum);
         for(int i=0; i<chnNum; i++)
         {
-            Sample s;
             vector<float> vec(sampleNum);
-            s.pf = vec.data(); s._type = SampleType::IEEE32; s._chnInx = i;
+            Sample s(vec.data(), i);
+            
+            //s.pf = vec.data(); s._type = SampleType::IEEE32; s._chnInx = i;
             //lst.push_back(std::move(vec));
             lst[i] = std::move(vec);
             mix.add(s);
