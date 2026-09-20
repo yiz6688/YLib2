@@ -1,4 +1,5 @@
 #pragma once
+#include"base_config.hpp"
 
 #ifndef DLLTEST_EXPORTS
     #define DLLTEST_API __declspec(dllimport)

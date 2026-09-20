@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<vector>
 
 enum class Octave

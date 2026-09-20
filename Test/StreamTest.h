@@ -1,4 +1,5 @@
 #pragma once
+#include"base_config.hpp"
 #include"../YCore/Stream.h"
 #include"../YCore/FileStream.h"
 #include"../YCore/MemoryStream.h"

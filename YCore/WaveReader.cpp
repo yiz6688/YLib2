@@ -1,4 +1,5 @@
-﻿#include"WaveReader.h"
+﻿#include"base_config.hpp"
+#include"WaveReader.h"
 #include"FileStream.h"
 #include<stdexcept>
 

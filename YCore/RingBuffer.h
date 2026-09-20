@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<atomic>
 #include<vector>
-#include<span>
 /// <summary>
 /// 环形缓冲区
 /// 1、支持无锁读写
@@ -52,13 +52,13 @@ public:
 	int writeTo(RingBuffer& ring, int size);
 
 
-	std::span<char> getWriteBuffer(TYPE1 size);
+	span_ns::span<char> getWriteBuffer(TYPE1 size);
 
 	int releaseWriteBuffer(TYPE1 size);
 
 	int releaseWriteBuffer();
 
-	std::span<char> getReadBuffer(TYPE1 size);
+	span_ns::span<char> getReadBuffer(TYPE1 size);
 
 	int releaseReadBuffer(TYPE1 size);
 

@@ -1,11 +1,17 @@
-﻿#pragma once
+#pragma once
+#include"base_config.hpp"
+#include"Expected.h"
 #include"LogBuffer.h"
 #include<string>
 #include<stdexcept>
 #include<utility>
 
+// Result1: 基于 Expected(code=0 成功, T 存值, E 存错误), 与 std::expected 基本一致
+template<typename T>
+using Result1 = ycore::Expected<T>;
 
-
+#if 0
+//原 Result1 实现已迁移到 Expected.h(ycore::expected), 保留代码供参考
 template<typename T>
 class Result1
 {
@@ -159,9 +165,9 @@ protected:
 
 
 
+#endif
 class Result : public LogBuffer
 {
-
 
 public:
 	Result();

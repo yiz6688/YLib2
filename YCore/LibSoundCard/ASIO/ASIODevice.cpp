@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 /*
 Asio驱动的具体实现
 
@@ -16,7 +17,6 @@ Asio驱动的具体实现
    不可覆盖, 精确控制播放延迟。
 5、底层回调: 输入采集填充到输入环形区, 从输出环形区取数, 达到通知门限后通知引擎处理。
 */
-#include<print>
 #include<cstring>
 #include<stdexcept>
 #include"./asiosdk/asiosys.h"
@@ -25,11 +25,12 @@ Asio驱动的具体实现
 
 #include "ASIODevice.h"
 #include<memory>
-#include<format>
 #include"../../BitConverter.h"
 #include"../../NumUtils.h"
 
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
 
 //采样位深(字节)
 static int _getByteDepth(SampleType type)
@@ -81,14 +82,14 @@ ASIODevice::ASIODevice(ASIOCallbacks* _callbacks, CLSID clsid, int notifyMills, 
     //通知时长有效范围: 10-50ms
     if (this->notifyMills < 10 || this->notifyMills > 50)
     {
-        throw std::invalid_argument(std::format("notifyMills 超出有效范围[10,50]ms: {}", this->notifyMills));
+        throw std::invalid_argument(fmt_ns::format("notifyMills 超出有效范围[10,50]ms: {}", this->notifyMills));
     }
     //最大延迟: 0=自动; 非0必须 >= 通知时长 且 <= 100ms
     if (this->maxDelayMills != 0)
     {
         if (this->maxDelayMills < this->notifyMills || this->maxDelayMills > 100)
         {
-            throw std::invalid_argument(std::format("maxDelayMills 无效: 应为0(自动)或[{},100]ms: {}",
+            throw std::invalid_argument(fmt_ns::format("maxDelayMills 无效: 应为0(自动)或[{},100]ms: {}",
                 this->notifyMills, this->maxDelayMills));
         }
     }
@@ -109,9 +110,9 @@ ASIODevice::~ASIODevice()
  * 1、如果驱动不存在, 直接进行加载
  * 2、如果驱动已存在, 检测是否失效。确认失效后释放旧资源后重新加载。
  */
-std::expected<void, std::string> ASIODevice::loadInstance()
+exp_ns::expected<void, std::string> ASIODevice::loadInstance()
 {
-    std::expected<void, std::string> result;
+    exp_ns::expected<void, std::string> result;
     if (this->iasio != nullptr)
     {
         result = this->getSampleRate();
@@ -126,7 +127,7 @@ std::expected<void, std::string> ASIODevice::loadInstance()
     HRESULT hResult = CoCreateInstance(this->driverID, 0, CLSCTX_INPROC_SERVER, this->driverID, (LPVOID*)(&this->iasio));
     if (hResult != S_OK)
     {
-        return std::unexpected(std::format("CoCreateInstance Fail, result={}", hResult));
+        return exp_ns::unexpected(fmt_ns::format("CoCreateInstance Fail, result={}", hResult));
     }
     void* handle = nullptr;
     auto initResult = this->iasio->init(handle);
@@ -136,7 +137,7 @@ std::expected<void, std::string> ASIODevice::loadInstance()
         this->iasio->getErrorMessage(err);
         this->iasio->Release();  //释放驱动
         this->iasio = nullptr;
-        return std::unexpected(std::format("asio init Fail,err={}", err));
+        return exp_ns::unexpected(fmt_ns::format("asio init Fail,err={}", err));
     }
 
     return {};
@@ -148,7 +149,7 @@ std::expected<void, std::string> ASIODevice::loadInstance()
 /// 如果不支持48k采样率, 就使用默认采样率加载驱动。
 /// 加载完毕后相关参数保存在成员变量中。
 /// </summary>
-std::expected<void, std::string> ASIODevice::deviceInit()
+exp_ns::expected<void, std::string> ASIODevice::deviceInit()
 {
     ASIOError error;
     string errInfo = "";
@@ -167,7 +168,7 @@ std::expected<void, std::string> ASIODevice::deviceInit()
         error = this->iasio->setSampleRate(48000);
         if (error != ASE_OK)
         {
-            return std::unexpected(std::format("setSampleRate Fail, code: {}", error));
+            return exp_ns::unexpected(fmt_ns::format("setSampleRate Fail, code: {}", error));
         }
     }
 
@@ -181,11 +182,11 @@ std::expected<void, std::string> ASIODevice::deviceInit()
     error = this->iasio->getChannels(&this->num_of_capture, &this->num_of_render);
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("getChannels Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("getChannels Fail, code: {}", error));
     }
     if (this->num_of_capture > 32 || this->num_of_render > 32)
     {
-        return std::unexpected(std::format("通道数超出32: input={}, output={}, 不支持", this->num_of_capture, this->num_of_render));
+        return exp_ns::unexpected(fmt_ns::format("通道数超出32: input={}, output={}, 不支持", this->num_of_capture, this->num_of_render));
     }
 
     this->inputChannels.clear();
@@ -203,7 +204,7 @@ std::expected<void, std::string> ASIODevice::deviceInit()
         error = this->iasio->getChannelInfo(&value);
         if (error != ASE_OK)
         {
-            return std::unexpected(std::format("getChannelInfo Fail, inputchannel={} code: {}", i, error));
+            return exp_ns::unexpected(fmt_ns::format("getChannelInfo Fail, inputchannel={} code: {}", i, error));
         }
         if (type == -1)
         {
@@ -212,13 +213,13 @@ std::expected<void, std::string> ASIODevice::deviceInit()
             this->bitDepth = _getByteDepth(this->sampleType);
             if (this->sampleType == SampleType::UNKNOWN || this->bitDepth <= 0)
             {
-                return std::unexpected(std::format("unsupport SampleType: {}", type));
+                return exp_ns::unexpected(fmt_ns::format("unsupport SampleType: {}", type));
             }
         }
 
         if (value.type != type)
         {
-            return std::unexpected(std::format("inputChannel:{}, sampleType error", i));
+            return exp_ns::unexpected(fmt_ns::format("inputChannel:{}, sampleType error", i));
         }
 
         this->inputChannels.push_back(value);
@@ -230,11 +231,11 @@ std::expected<void, std::string> ASIODevice::deviceInit()
         error = this->iasio->getChannelInfo(&value);
         if (error != ASE_OK)
         {
-            return std::unexpected(std::format("getChannelInfo Fail, outputchannel={} code: {}", i, error));
+            return exp_ns::unexpected(fmt_ns::format("getChannelInfo Fail, outputchannel={} code: {}", i, error));
         }
         if (value.type != type)
         {
-            return std::unexpected(std::format("outputChannel:{}, sampleType error", i));
+            return exp_ns::unexpected(fmt_ns::format("outputChannel:{}, sampleType error", i));
         }
         this->outputChannels.push_back(value);
     }
@@ -242,7 +243,7 @@ std::expected<void, std::string> ASIODevice::deviceInit()
     return {};
 }
 
-std::expected<void, std::string> ASIODevice::deviceRelease()
+exp_ns::expected<void, std::string> ASIODevice::deviceRelease()
 {
     if (this->iasio != nullptr)
     {
@@ -278,16 +279,16 @@ TResult<void> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask
 {
     if (this->bufferReady)
     {
-        return std::unexpected("缓冲区已创建, 通道掩码不允许修改");
+        return exp_ns::unexpected("缓冲区已创建, 通道掩码不允许修改");
     }
     //设备未初始化(驱动打开失败或不存在)时, 设置掩码无意义
     if (this->num_of_capture == 0 && this->num_of_render == 0)
     {
-        return std::unexpected("设备未初始化, 无法设置通道掩码");
+        return exp_ns::unexpected("设备未初始化, 无法设置通道掩码");
     }
     if (inputMask == 0 && outputMask == 0)
     {
-        return std::unexpected("输入和输出通道掩码不能同时为0");
+        return exp_ns::unexpected("输入和输出通道掩码不能同时为0");
     }
 
     unsigned inputValid = (this->num_of_capture >= 32) ? 0xFFFFFFFFu : ((1u << this->num_of_capture) - 1u);
@@ -305,11 +306,11 @@ TResult<void> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask
 
     if ((inputMask & inputValid) != inputMask)
     {
-        return std::unexpected("inputMask 越界或包含无效通道");
+        return exp_ns::unexpected("inputMask 越界或包含无效通道");
     }
     if ((outputMask & outputValid) != outputMask)
     {
-        return std::unexpected("outputMask 越界或包含无效通道");
+        return exp_ns::unexpected("outputMask 越界或包含无效通道");
     }
 
     this->inputMask = inputMask;
@@ -332,11 +333,11 @@ TResult<void> ASIODevice::createBuffer()
 {
     if (this->bufferReady)
     {
-        return std::unexpected("bufferReady is true");
+        return exp_ns::unexpected("bufferReady is true");
     }
     if (this->iasio == nullptr)
     {
-        return std::unexpected("驱动未加载");
+        return exp_ns::unexpected("驱动未加载");
     }
 
     auto result = this->getHaParam();
@@ -416,7 +417,7 @@ TResult<void> ASIODevice::createBuffer()
 
     if (this->totalActiveNum == 0)
     {
-        return std::unexpected("没有激活任何有效通道");
+        return exp_ns::unexpected("没有激活任何有效通道");
     }
 
     this->deviceFrameSize = (int)this->bufferSize;
@@ -458,7 +459,7 @@ TResult<void> ASIODevice::createBuffer()
         this->bufferSize, this->callbacks);
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("createBuffers Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("createBuffers Fail, code: {}", error));
     }
     println("createbuffer 成功");
 
@@ -482,7 +483,7 @@ TResult<void> ASIODevice::createBuffer()
 /// <summary>
 /// 打开驱动, 如驱动已打开且资源已创建就不重复执行, 否则重新构建资源。
 /// </summary>
-std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
+exp_ns::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
 {
     //需要加载驱动的标志位
     bool flag = false;
@@ -499,7 +500,7 @@ std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
             {
                 if (this->driverRuning)
                 {
-                    return std::unexpected("驱动运行中,不允许以不同的采样率打开");
+                    return exp_ns::unexpected("驱动运行中,不允许以不同的采样率打开");
                 }
                 else
                 {
@@ -591,7 +592,7 @@ TResult<void> ASIODevice::getSampleRate()
     auto error = iasio->getSampleRate(&_sampleRate);
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("getSampleRate Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("getSampleRate Fail, code: {}", error));
     }
     this->sampleRate = _sampleRate;
 
@@ -603,7 +604,7 @@ TResult<void> ASIODevice::supportSampleRate(long value)
     auto error = this->iasio->canSampleRate(value);
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("supportSampleRate Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("supportSampleRate Fail, code: {}", error));
     }
     return {};
 }
@@ -622,7 +623,7 @@ TResult<void> ASIODevice::setSampleRate(long value)
         }
         else
         {
-            return std::unexpected("驱动运行中，不允许设置采样率");
+            return exp_ns::unexpected("驱动运行中，不允许设置采样率");
         }
     }
     else
@@ -630,7 +631,7 @@ TResult<void> ASIODevice::setSampleRate(long value)
         auto error = this->iasio->setSampleRate(value);
         if (error != ASE_OK)
         {
-            return std::unexpected(std::format("setSampleRate Fail, code: {}", error));
+            return exp_ns::unexpected(fmt_ns::format("setSampleRate Fail, code: {}", error));
         }
 
         this->sampleRate = value;
@@ -656,7 +657,7 @@ TResult<void> ASIODevice::start()
         else
         {
             this->driverRuning = false;
-            return std::unexpected(std::format("start Fail, code: {}", error));
+            return exp_ns::unexpected(fmt_ns::format("start Fail, code: {}", error));
         }
     }
     else
@@ -679,7 +680,7 @@ TResult<void> ASIODevice::stop()
     this->driverRuning = false;
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("stop Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("stop Fail, code: {}", error));
     }
 
     return {};
@@ -692,7 +693,7 @@ TResult<void> ASIODevice::getHaParam()
         &this->bufferPreferredSize, &this->bufferGranularity);
     if (error != ASE_OK)
     {
-        return std::unexpected(std::format("getBufferSize Fail, code: {}", error));
+        return exp_ns::unexpected(fmt_ns::format("getBufferSize Fail, code: {}", error));
     }
     this->bufferSize = this->bufferPreferredSize;
 

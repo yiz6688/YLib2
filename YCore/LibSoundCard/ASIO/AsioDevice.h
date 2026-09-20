@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<Windows.h>
 #include<vector>
 #include<atomic>

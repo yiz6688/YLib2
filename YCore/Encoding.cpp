@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include "Encoding.h"
 #include<string>
 #include<stdexcept>

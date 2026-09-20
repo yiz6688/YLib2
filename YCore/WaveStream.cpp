@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"WaveStream.h"
 #include"FileStream.h"
 #include"BitConverter.h"

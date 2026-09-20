@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"../IRender.h"
 #include"../STAWorker.h"
 #include<Windows.h>
@@ -18,21 +19,21 @@ public:
 
 	STAType initSTA(std::string_view id);
 
-	std::expected<void, std::string> init(std::string_view id);
+	exp_ns::expected<void, std::string> init(std::string_view id);
 
-	std::expected<void, std::string> release();
+	exp_ns::expected<void, std::string> release();
 
-	std::expected<void, std::string> doPlay();
+	exp_ns::expected<void, std::string> doPlay();
 
 	STAType fillBuffer(int frameSize);
 
-	std::expected<void, std::string> playAsync(WaveReader* waveReader) override;
+	exp_ns::expected<void, std::string> playAsync(WaveReader* waveReader) override;
 
-	std::expected<void, std::string> waitPlayDone() override;
+	exp_ns::expected<void, std::string> waitPlayDone() override;
 
-	std::expected<void, std::string> stopPlay() override;
+	exp_ns::expected<void, std::string> stopPlay() override;
 
-	std::expected<void, std::string> play(WaveReader* waveReader) override;
+	exp_ns::expected<void, std::string> play(WaveReader* waveReader) override;
 
 	PlaybackState getPlaybackState() override
 	{

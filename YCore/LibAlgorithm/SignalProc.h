@@ -1,5 +1,5 @@
-#pragma once
-#include<span>
+﻿#pragma once
+#include"base_config.hpp"
 #include<numeric>
 #include<cmath>
 #include<vector>
@@ -11,7 +11,7 @@ class SignalProc
 
 public:
 	//卷积
-	static std::vector<double> conv2d(std::span<double> data, std::span<double> kernel)
+	static std::vector<double> conv2d(span_ns::span<double> data, span_ns::span<double> kernel)
 	{
 		int dataSize = data.size();
 		int kernelSize = kernel.size();
@@ -32,7 +32,7 @@ public:
 
 public:
 	//计算rms, detrend 是否去趋势
-	static double getRMS(std::span<double> data, bool detrend)
+	static double getRMS(span_ns::span<double> data, bool detrend)
 	{
 		auto size = data.size();
 		double power = 0.0;

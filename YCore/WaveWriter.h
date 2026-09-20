@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include"WaveStream.h"
 #include"WaveBuffer.h"
 #include"TResult.h"

@@ -1,7 +1,7 @@
 #pragma once
+#include"base_config.hpp"
 #include<atomic>
 #include<vector>
-#include<span>
 #include<algorithm>
 #include<cstring>
 #include<limits>
@@ -38,8 +38,8 @@ public:
 	//使用外部 char* 空间包装(按字节缓冲区传入, 约束一致); T=char 时与 T* 构造重合, 只提供 T* 版本
 	//read/write(字节拷贝)无对齐要求; 但 getReadBuffer/getWriteBuffer 返回 span<T>, 直接按 T 类型访问时
 	//外部缓冲区仍需按 alignof(T) 对齐
+	template<typename U = T, std::enable_if_t<!std::is_same_v<U, char>, int> = 0>
 	RingBuffer2(char* buffer, unsigned frameCount, unsigned frameSize = sizeof(T))
-        requires (std::is_same_v<T, char> == false)
         : _frameCount{ frameCount }, _frameSize{ frameSize }, _buffer(), _ptr{ reinterpret_cast<T*>(buffer) }
     {
         if(buffer == nullptr)
@@ -229,7 +229,7 @@ public:
         }
 
         wpos += writeableFrames; //修正写指针(帧)
-        this->write_pos.store(wpos, std::memory_order::release);
+        this->write_pos.store(wpos, std::memory_order_release);
 
         return static_cast<int>(writeableFrames * this->_elemsPerFrame);
     }
@@ -279,7 +279,7 @@ public:
     }
 
 
-	std::span<T> getWriteBuffer(TYPE1 size)
+	span_ns::span<T> getWriteBuffer(TYPE1 size)
     {
         auto wpos = this->write_pos.load(std::memory_order_relaxed);
         auto writePos = wpos & this->_mask; //帧索引
@@ -290,7 +290,7 @@ public:
 
         if(size == 0 || this->write_lock_len != 0)
         {
-            return std::span<T>(wptr, 0);
+            return span_ns::span<T>(wptr, static_cast<std::size_t>(0));
         }
 
         auto rpos = this->read_pos.load(std::memory_order_acquire);
@@ -306,7 +306,7 @@ public:
         this->write_lock_len = std::min(tailFrames, writeableFrames); //锁定不超过尾部, 避免回绕
 
         //write_lock_len 为锁定帧数, span<T> 按 T 元素计数
-        return std::span<T>(wptr, this->write_lock_len * this->_elemsPerFrame);
+        return span_ns::span<T>(wptr, this->write_lock_len * this->_elemsPerFrame);
     }
 
 	int releaseWriteBuffer(TYPE1 size)
@@ -343,7 +343,7 @@ public:
         return this->releaseWriteBuffer(-1);
     }
 
-	std::span<T> getReadBuffer(TYPE1 size)
+	span_ns::span<T> getReadBuffer(TYPE1 size)
     {
         auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
@@ -355,7 +355,7 @@ public:
 
         if(size == 0 || this->read_lock_len != 0)
         {
-            return std::span<T>(rptr, 0);
+            return span_ns::span<T>(rptr, static_cast<std::size_t>(0));
         }
         
         auto wpos = this->write_pos.load(std::memory_order_acquire);
@@ -371,7 +371,7 @@ public:
         this->read_lock_len = std::min(tailFrames, readableFrames); //锁定不超过尾部, 避免回绕
 
         //read_lock_len 为锁定帧数, span<T> 按 T 元素计数
-        return std::span<T>(rptr, this->read_lock_len * this->_elemsPerFrame);
+        return span_ns::span<T>(rptr, this->read_lock_len * this->_elemsPerFrame);
     }
 
 	int releaseReadBuffer(TYPE1 size)

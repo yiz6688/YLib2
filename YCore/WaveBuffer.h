@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include"base_config.hpp"
 #include"WaveFormat.h"
 #include"myType.h"
 #include"RingBuffer2.h"
@@ -184,10 +185,10 @@ public:
     int getWriteableSample();
     int getCapacity();
 
-    std::span<char> getReadBuffer(int perChSize);
+    span_ns::span<char> getReadBuffer(int perChSize);
     int releaseReadBuffer();
 
-    std::span<char> getWriteBuffer(int perChSize);
+    span_ns::span<char> getWriteBuffer(int perChSize);
     int releaseWriteBuffer();
 
 

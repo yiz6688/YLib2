@@ -1,8 +1,7 @@
+#include"base_config.hpp"
 #include"ASIODriver.h"
 #include"asiosdk/asio.h"
-#include<ranges>
 #include<array>
-#include<print>
 #include<process.h>
 #include<cstring>
 #include<algorithm>
@@ -12,6 +11,10 @@
 #include"../../BitConverter.h"
 
 using namespace std;
+using exp_ns::expected;
+using exp_ns::unexpected;
+using fmt_ns::println;
+using fmt_ns::print;
 
 constexpr unsigned MAX_DRIVER_NUM = 2;  //最大支持的驱动数量
 
@@ -89,7 +92,7 @@ array<ASIOEntity, MAX_DRIVER_NUM> registerCallbacks(std::integer_sequence<unsign
             object.callback.bufferSwitchTimeInfo = __ASIOCALLBACK__<ids>::bufferSwitchTimeInfo;
             object.callback.sampleRateDidChange = __ASIOCALLBACK__<ids>::sampleRateDidChange;
             __ASIOCALLBACK__<ids>::asioEntity = &object;
-            std::println("注册:{}", ids);
+            fmt_ns::println("注册:{}", ids);
         }(), ...);
 
     return entitys;
@@ -158,20 +161,20 @@ ASIODriver::~ASIODriver()
     }
 }
 
-std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask, int bufferMills)
+exp_ns::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask, int bufferMills)
 {
     if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
     {
-        return std::unexpected("驱动缓冲区未就绪");
+        return exp_ns::unexpected("驱动缓冲区未就绪");
     }
     if (channelMask == 0)
     {
-        return std::unexpected("通道掩码不能为0");
+        return exp_ns::unexpected("通道掩码不能为0");
     }
     int outputMask = (int)this->pAsioDevice->outputMask;
     if ((channelMask & outputMask) != channelMask)
     {
-        return std::unexpected("通道掩码超出激活的输出通道");
+        return exp_ns::unexpected("通道掩码超出激活的输出通道");
     }
 
     //独占模式: 每个输出通道只允许一个客户端(原子占用, 失败即已占用)
@@ -182,7 +185,7 @@ std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask
         {
             if (cur & (unsigned)channelMask)
             {
-                return std::unexpected("独占模式下输出通道已被其他客户端占用");
+                return exp_ns::unexpected("独占模式下输出通道已被其他客户端占用");
             }
             if (this->_claimedOutputChannels.compare_exchange_weak(cur, cur | (unsigned)channelMask,
                 std::memory_order_acq_rel, std::memory_order_acquire))
@@ -196,20 +199,20 @@ std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask
     return pRender;
 }
 
-std::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMask, int bufferMills)
+exp_ns::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMask, int bufferMills)
 {
     if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
     {
-        return std::unexpected("驱动缓冲区未就绪");
+        return exp_ns::unexpected("驱动缓冲区未就绪");
     }
     if (channelMask == 0)
     {
-        return std::unexpected("通道掩码不能为0");
+        return exp_ns::unexpected("通道掩码不能为0");
     }
     int inputMask = (int)this->pAsioDevice->inputMask;
     if ((channelMask & inputMask) != channelMask)
     {
-        return std::unexpected("通道掩码超出激活的输入通道");
+        return exp_ns::unexpected("通道掩码超出激活的输入通道");
     }
 
     //独占模式: 每个输入通道只允许一个客户端(原子占用, 失败即已占用)
@@ -220,7 +223,7 @@ std::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMa
         {
             if (cur & (unsigned)channelMask)
             {
-                return std::unexpected("独占模式下输入通道已被其他客户端占用");
+                return exp_ns::unexpected("独占模式下输入通道已被其他客户端占用");
             }
             if (this->_claimedInputChannels.compare_exchange_weak(cur, cur | (unsigned)channelMask,
                 std::memory_order_acq_rel, std::memory_order_acquire))
@@ -892,7 +895,7 @@ STAType ASIODriver::start()
     }
     if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
     {
-        return std::unexpected("缓冲区未创建");
+        return exp_ns::unexpected("缓冲区未创建");
     }
 
     this->processFlag.store(true);
@@ -931,7 +934,7 @@ STAType ASIODriver::start()
         if (th == 0)
         {
             this->processFlag.store(false);
-            return std::unexpected("创建引擎线程失败");
+            return exp_ns::unexpected("创建引擎线程失败");
         }
         this->hThread = reinterpret_cast<HANDLE>(th);
         //引擎线程优先级: 高于普通, 保证及时处理; 不用TIME_CRITICAL, 避免与音频回调线程竞争饿死
@@ -987,7 +990,7 @@ TResult<int> ASIODriver::getSampleRate()
     auto result = future.get();
     if (!result)
     {
-        return std::unexpected(result.error());
+        return exp_ns::unexpected(result.error());
     }
 
     return this->pAsioDevice->sampleRate;
@@ -1061,20 +1064,21 @@ TResult<void> ASIODriver::Release()
     return result;
 }
 
-std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
+exp_ns::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
 {
     lock_guard<mutex> lg(gMTX);
 
     //第一个空偏移
     int offset = -1;
-    for (auto [index, entity] : views::enumerate(ASIOEntitys))
+    for (int index = 0; index < (int)ASIOEntitys.size(); index++)
     {
+        auto& entity = ASIOEntitys[index];
         auto& pASIODriver = entity.pASIODriver;
         if (pASIODriver != nullptr)
         {
             if (IsEqualCLSID(pASIODriver->asioID, clsid) == TRUE)
             {
-                return std::unexpected("不允许重复创建驱动");
+                return exp_ns::unexpected("不允许重复创建驱动");
             }
         }
         else
@@ -1098,7 +1102,7 @@ std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, in
     auto result = pASIODriver->driverOpen();
     if (!result)
     {
-        return std::unexpected(result.error());
+        return exp_ns::unexpected(result.error());
     }
 
     entity.pASIODriver = std::move(pASIODriver);
@@ -1106,7 +1110,7 @@ std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, in
     return entity.pASIODriver.get();
 }
 
-std::expected<void, std::string> ASIODriver::releaseDriver(ASIODriver* driver)
+exp_ns::expected<void, std::string> ASIODriver::releaseDriver(ASIODriver* driver)
 {
     if (driver == nullptr)
     {

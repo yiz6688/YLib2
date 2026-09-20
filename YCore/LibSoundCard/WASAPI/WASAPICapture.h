@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"../ICapture.h"
 #include"../STAWorker.h"
 #include<Windows.h>
@@ -14,21 +15,21 @@ public:
 
 	STAType initSTA(std::string_view id);
 
-	std::expected<void, std::string> init(std::string_view id);
+	exp_ns::expected<void, std::string> init(std::string_view id);
 
-	std::expected<void, std::string> release();
+	exp_ns::expected<void, std::string> release();
 
-	std::expected<void, std::string> doCapture();
+	exp_ns::expected<void, std::string> doCapture();
 
 	STAType readNextPacket();
 
-	std::expected<void, std::string> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
+	exp_ns::expected<void, std::string> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
 
-	std::expected<void, std::string> waitCaptureDone() override;
+	exp_ns::expected<void, std::string> waitCaptureDone() override;
 
-	std::expected<void, std::string> stopCapture() override;
+	exp_ns::expected<void, std::string> stopCapture() override;
 
-	std::expected<void, std::string> capture(WaveWriter* waveWriter, int maxRecordMills) override;
+	exp_ns::expected<void, std::string> capture(WaveWriter* waveWriter, int maxRecordMills) override;
 
 	CaptureState getCaptureState()
 	{

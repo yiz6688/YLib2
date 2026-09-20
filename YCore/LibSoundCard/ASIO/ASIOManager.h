@@ -1,9 +1,9 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<string>
 #include<guiddef.h>
 #include<vector>
 #include"ASIOClient.h"
-#include<expected>
 #include"../../TResult.h"
 
 //驱动信息

@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 
 #define _USE_MATH_DEFINES
 #include<algorithm>
@@ -6,7 +7,6 @@
 #include<string>
 #include<vector>
 #include<cmath>
-#include<print>
 #include<fstream>
 #include"FindDelay.h"
 #include"Harmonic.h"
@@ -411,7 +411,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 	//查找音频文件起始位置
 	int findDelay = fd.gcc_phat_delay(wav, stdWave);
 
-	std::println("延迟: {}", findDelay);
+	fmt_ns::println("延迟: {}", findDelay);
 
 
 	float rate = 0.05;
@@ -461,7 +461,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 
 		FFT2 fft(fftLen);
 		auto fd = fft.getFD();
-		auto temp = std::span<double>(vec.data(), fftLen);
+		auto temp = span_ns::span<double>(vec.data(), fftLen);
 		fft.fft(temp); //进行fft;
 		for(int i=0; i<= fftLen/2; i++)
 		{
@@ -493,7 +493,7 @@ void StepSweep::sweepTest(vector<double>& wav, double startHz, double stopHz, in
 			FileUtils::writeNumbers(results.data(), index, pathx);
 			if( ii == 0 )
 			{
-				std::println("{}", results[1]);
+				fmt_ns::println("({}, {})", results[1].first, results[1].second);
 			}
 		}
 

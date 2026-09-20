@@ -1,6 +1,6 @@
+﻿#include"base_config.hpp"
 #include "FileStream.h"
 #include<Windows.h>
-#include<format>
 #include<iostream>
 #include"Encoding.h"
 #include"WinUtils.h"
@@ -92,7 +92,7 @@ FileStream::~FileStream()
 }
 
 //底层关闭实现: 尽力 flush 落盘 + 关闭句柄, 返回 combined error(供 close() 抛异常 / 析构静默)
-std::expected<void, std::string> FileStream::inner_close()
+exp_ns::expected<void, std::string> FileStream::inner_close()
 {
 	if (this->_hFile != INVALID_HANDLE_VALUE)
 	{
@@ -113,13 +113,13 @@ std::expected<void, std::string> FileStream::inner_close()
 			auto closeError = WinUtils::getError("CloseHandle");
 			if (flushError.empty())
 	{
-				return std::unexpected(closeError);
+				return exp_ns::unexpected(closeError);
 			}
-			return std::unexpected(flushError + " " + closeError);
+			return exp_ns::unexpected(flushError + " " + closeError);
 		}
 		if (!flushError.empty())
 		{
-			return std::unexpected(flushError);
+			return exp_ns::unexpected(flushError);
 		}
 	}
 

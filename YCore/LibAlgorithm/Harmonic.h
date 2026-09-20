@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include"fftw3.h"
 #include<algorithm>
 #include<numeric>
@@ -357,7 +358,7 @@ public:
 
 			if(baseFreq >= 20000)
 			{
-				std::println("1.{},{},{}",left2, toneIndex2, right2);
+				fmt_ns::println("1.{},{},{}",left2, toneIndex2, right2);
 			}
 
 			auto ress = getPowerFreq(pxx, freqs, size, rbw, {left2, toneIndex2, right2}, false);  //获取频率
@@ -378,7 +379,7 @@ public:
 			bool flag = false;
 			if(baseFreq >= 20000 && order==2)
 			{
-				std::println("2.{},{},{}",left2, toneIndex2, right2);
+				fmt_ns::println("2.{},{},{}",left2, toneIndex2, right2);
 				flag = true;
 			}
 

@@ -1,4 +1,8 @@
-#include<print>
+#if !defined(YCORE_USE_STD23)
+// Test.cpp 依赖 C++23(move_only_function / expected.and_then / std::numbers 等), C++17 构建时编译为占位
+int main() { return 0; }
+#else
+#include"base_config.hpp"
 #include"StreamTest.h"
 #include<vector>
 #include<array>
@@ -7,6 +11,10 @@
 #include"../YCore/Utils.h"
 #include<numbers>
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 
 
@@ -73,7 +81,7 @@ void createSineTest()
 	for(int i=0; i<nSamples; i++)
 	{
 		double t = static_cast<double>(i) / fmt.getSampleRate(); //当前的时间点
-		double sampleValue = amplitude * sin(2.0 * numbers::pi * freq * t);
+		double sampleValue = amplitude * sin(2.0 * ycore::pi * freq * t);
 		samples[i] = static_cast<float>(sampleValue);
 		auto result = writer1->writeFloat(samples.data() + i, 1);
 	}
@@ -152,7 +160,7 @@ void threadFunc()
 
 }
 
-std::expected<int, std::string> func1(int x)
+exp_ns::expected<int, std::string> func1(int x)
 {
 	println("input:{}", x);
 	if (x == 1)
@@ -161,7 +169,7 @@ std::expected<int, std::string> func1(int x)
 	}
 	else
 	{
-		return std::unexpected("错误");
+		return exp_ns::unexpected("错误");
 	}
 }
 
@@ -254,7 +262,7 @@ int WaveRingTest()
 	for (int i = 0; i < nSamples; i++)
 	{
 		double t = static_cast<double>(i) / fmt.getSampleRate(); //当前的时间点
-		double sampleValue = amplitude * sin(2.0 * numbers::pi * freq * t);
+		double sampleValue = amplitude * sin(2.0 * ycore::pi * freq * t);
 		samples[i] = static_cast<float>(sampleValue);
 	}
 
@@ -273,7 +281,7 @@ int WaveRingTest()
 
 		
 		//按照int16读取
-		string path = std::format(R"(D:\wave\out\sine_{}_i16.wav)", name);
+		string path = fmt_ns::format(R"(D:\wave\out\sine_{}_i16.wav)", name);
 		std::vector<short> i16Data(sampleRate);
 		auto readSample = wb.readInt16(i16Data.data(), i16Data.size());
 		println("{} 读取的数量:{}",path,  readSample);
@@ -299,7 +307,7 @@ int WaveRingTest()
 		//按照int24读取
 		writeSample = wb.writeFloat(samples.data(), nSamples);
 		println("写入点数:{}, 成功点数:{}", nSamples, writeSample);
-		path = std::format(R"(D:\wave\out\sine_{}_i24.wav)", name);
+		path = fmt_ns::format(R"(D:\wave\out\sine_{}_i24.wav)", name);
 		std::vector<char> i24Data(sampleRate * 3);
 		readSample = wb.readInt24Bytes(i24Data.data(), i24Data.size() / 3);
 		println("{} 读取的数量:{}", path, readSample);
@@ -325,7 +333,7 @@ int WaveRingTest()
 		//按照int32读取
 		writeSample = wb.writeFloat(samples.data(), nSamples);
 		println("写入点数:{}, 成功点数:{}", nSamples, writeSample);
-		path = std::format(R"(D:\wave\out\sine_{}_i32.wav)", name);
+		path = fmt_ns::format(R"(D:\wave\out\sine_{}_i32.wav)", name);
 		std::vector<int> i32Data(sampleRate);
 		readSample = wb.readInt32(i32Data.data(), i32Data.size());
 		println("{} 读取的数量:{}", path, readSample);
@@ -350,7 +358,7 @@ int WaveRingTest()
 		//按照float读取
 		writeSample = wb.writeFloat(samples.data(), nSamples);
 		println("写入点数:{}, 成功点数:{}", nSamples, writeSample);
-		path = std::format(R"(D:\wave\out\sine_{}_float.wav)", name);
+		path = fmt_ns::format(R"(D:\wave\out\sine_{}_float.wav)", name);
 		std::vector<float> f32Data(sampleRate);
 		readSample = wb.readFloat(f32Data.data(), f32Data.size());
 		println("{} 读取的数量:{}", path, readSample);
@@ -392,7 +400,7 @@ int main()
 
 	std::future<void> fu1 = std::async(std::launch::async, [&hEvent, &flag]()
 		{
-			std::println("进入异步线程");
+			fmt_ns::println("进入异步线程");
 			while(flag)
 			{
 				DWORD result = WaitForSingleObject(hEvent, INFINITE);
@@ -405,7 +413,7 @@ int main()
 					println("等待失败");
 				}
 			}
-			std::println("异步线程退出");
+			fmt_ns::println("异步线程退出");
 		});
 
 
@@ -426,7 +434,7 @@ int main()
 	SetEvent(hEvent);
 	fu1.wait();
 
-	std::println("测试输出");
+	fmt_ns::println("测试输出");
 
 
 
@@ -579,7 +587,7 @@ int main()
 	auto v2x = fu2.get();
 	v2x.show();
 
-	println();
+	println("");
 
 	return 0;
 
@@ -592,7 +600,7 @@ int main()
 		or_else([](const std::string& err) 
 			{
 				println("error: {}", err); 
-				return std::expected<int, std::string>(3);
+				return exp_ns::expected<int, std::string>(3);
 			}).
 		and_then([](int k)
 			{
@@ -641,3 +649,4 @@ int main()
 
 	return 0;
 }
+#endif

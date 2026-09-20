@@ -1,8 +1,12 @@
+#include"base_config.hpp"
 #include "StreamTest.h"
 #include"../YCore/FileStream.h"
-#include<print>
 
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 
 string getStreamInfo(Stream& stream)
@@ -20,7 +24,7 @@ string getStreamInfo(Stream& stream)
 	}
 
 
-	return std::format("len:{} pos:{}", lenResult.value(), posResult.value());
+	return fmt_ns::format("len:{} pos:{}", lenResult.value(), posResult.value());
 }
 
 
@@ -50,7 +54,7 @@ void StreamTest::fileStreamWrite()
 	//string str = "Hello, FileStream!\n";
 	for (int i = 0; i < 11; i++)
 	{
-		 result = fs.write(std::format("{} {}",i , "Hello, FileStream!\n"));
+		 result = fs.write(fmt_ns::format("{} {}",i , "Hello, FileStream!\n"));
 		if(result)
 		{
 			int wSize = result.value();

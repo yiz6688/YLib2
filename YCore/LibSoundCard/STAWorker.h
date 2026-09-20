@@ -1,15 +1,15 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<condition_variable>
 #include<queue>
 #include<future>
-#include<expected>
 #include<mutex>
 #include<string>
 #include<atomic>
 #include<functional>
 #include<windows.h>
 
-using STAType = std::expected<void, std::string>;
+using STAType = exp_ns::expected<void, std::string>;
 using STAFunc = std::function<STAType()>;
 using STATask = std::packaged_task<STAType()>;
 using STAFuture = std::future<STAType>;

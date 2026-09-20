@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 /*
 该类用于获取pc上的所有板卡
 */
@@ -108,7 +109,7 @@ TPResult<ASIOClient> ASIOManager::createClient(unsigned index, int notifyMills, 
 	}
 	else
 	{
-		return std::unexpected(result.error());
+		return exp_ns::unexpected(result.error());
 	}
 }
 

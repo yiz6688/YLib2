@@ -1,10 +1,9 @@
+﻿#include"base_config.hpp"
 #include<windows.h>
 #include"../../Encoding.h"
 #include<mmdeviceapi.h>
-#include<format>
 #include"WASAPICapture.h"
 #include<Audioclient.h>
-#include<print>
 #include<stdexcept>
 
 
@@ -31,7 +30,7 @@ WASAPICapture::~WASAPICapture()
 
 STAType WASAPICapture::initSTA(std::string_view id)
 {
-	std::println("调用initSTA");
+	fmt_ns::println("调用initSTA");
 	auto fu = this->staWorker.submit([this, id]
 	{
 		return this->init(id);
@@ -39,7 +38,7 @@ STAType WASAPICapture::initSTA(std::string_view id)
 	return fu.get();
 }
 
-std::expected<void, std::string> WASAPICapture::init(std::string_view id)
+exp_ns::expected<void, std::string> WASAPICapture::init(std::string_view id)
 {
 
 	IMMDeviceCollection* pCollection;
@@ -51,12 +50,12 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (this->hEvent == INVALID_HANDLE_VALUE)
 	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "CreateEvent fail", GetLastError()));
 	}
 	this->hExit = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (this->hExit == INVALID_HANDLE_VALUE)
 	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "CreateEvent fail", GetLastError()));
 	}
 
 
@@ -69,7 +68,7 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取Enumerator失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取Enumerator失败", hr));
 	}
 
 	auto u16Id = Encoding::UTF8ToUTF16(id.data());
@@ -77,13 +76,13 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 	hr =  pEnumerator->GetDevice(u16Id.c_str(),  &this->pDevice);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取Device失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取Device失败", hr));
 	}
 
 	hr = this->pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&pAudioClient);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取AudioClient失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取AudioClient失败", hr));
 	}
 
 
@@ -99,40 +98,40 @@ std::expected<void, std::string> WASAPICapture::init(std::string_view id)
 	hr = this->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, hnsBufferDuration, hnsPeriodicity, &fmtEx, NULL);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Initialize fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient Initialize fail", hr));
 	}
 
 	REFERENCE_TIME latency_time;
 	hr = pAudioClient->GetStreamLatency(&latency_time);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetStreamLatency fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetStreamLatency fail", hr));
 	}
 
 	hr = pAudioClient->GetBufferSize(&this->bufferFrameSize);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetBufferSize fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetBufferSize fail", hr));
 	}
 
 	hr = pAudioClient->SetEventHandle(hEvent);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient SetEventHandle fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient SetEventHandle fail", hr));
 	}
 
 
 	hr = this->pAudioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&pCaptureClient);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetService fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetService fail", hr));
 	}
 
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPICapture::release()
+exp_ns::expected<void, std::string> WASAPICapture::release()
 {
 	if (this->pCaptureClient)
 	{
@@ -153,13 +152,13 @@ std::expected<void, std::string> WASAPICapture::release()
 		this->pDevice = nullptr;
 	}
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
 
 
 
-std::expected<void, std::string> WASAPICapture::doCapture()
+exp_ns::expected<void, std::string> WASAPICapture::doCapture()
 {
 	try
 	{
@@ -173,7 +172,7 @@ std::expected<void, std::string> WASAPICapture::doCapture()
 		hr = pAudioClient->Start();
 		if (FAILED(hr))
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient Start fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient Start fail", hr));
 		}
 
 		this->captureState = CaptureState::Capturing;
@@ -210,7 +209,7 @@ std::expected<void, std::string> WASAPICapture::doCapture()
 		hr = this->pAudioClient->Stop();
 		if (FAILED(hr))
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient Stop fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient Stop fail", hr));
 		}
 		this->captureState = CaptureState::Stopped;
 
@@ -220,7 +219,7 @@ std::expected<void, std::string> WASAPICapture::doCapture()
 	catch (const std::exception& e)
 	{
 		this->captureState = CaptureState::Stopped;
-		return std::unexpected(e.what());
+		return exp_ns::unexpected(e.what());
 	}
 }
 
@@ -237,7 +236,7 @@ STAType WASAPICapture::readNextPacket()
 		hr = this->pCaptureClient->GetNextPacketSize(&packetSize);
 		if (FAILED(hr))	
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient GetNextPacketSize fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient GetNextPacketSize fail", hr));
 		}
 
 		if (packetSize == 0)
@@ -274,24 +273,24 @@ STAType WASAPICapture::readNextPacket()
 		hr = this->pCaptureClient->ReleaseBuffer(framesAvailable);  //释放对应的缓冲区
 		if (FAILED(hr))
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
 		}
 	}
 
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _waveWriter, int maxRecordMills)
+exp_ns::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _waveWriter, int maxRecordMills)
 {
 	if (this->captureState == CaptureState::Starting || this->captureState == CaptureState::Capturing)
 	{
-		return std::unexpected("Capture is already running");
+		return exp_ns::unexpected("Capture is already running");
 	}
 	auto fmt = _waveWriter->getWaveFormat();
 	if (fmt != this->waveFormat)
 	{
-		return std::unexpected("WaveFormat mismatch");
+		return exp_ns::unexpected("WaveFormat mismatch");
 	}
 	
 	this->waveWriter = _waveWriter;
@@ -311,10 +310,10 @@ std::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _waveWr
 	
 
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPICapture::waitCaptureDone()
+exp_ns::expected<void, std::string> WASAPICapture::waitCaptureDone()
 {
 	if (this->captureFuture.valid())
 	{
@@ -326,17 +325,17 @@ std::expected<void, std::string> WASAPICapture::waitCaptureDone()
 	}
 }
 
-std::expected<void, std::string> WASAPICapture::stopCapture()
+exp_ns::expected<void, std::string> WASAPICapture::stopCapture()
 {
 	if (this->captureState != CaptureState::Stopped && this->captureState != CaptureState::Stopping)
 	{
 		this->captureState = CaptureState::Stopping; //标记为停止中
 		SetEvent(this->hExit);  //触发退出事件
 	}
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPICapture::capture(WaveWriter* waveWriter, int maxRecordMills)
+exp_ns::expected<void, std::string> WASAPICapture::capture(WaveWriter* waveWriter, int maxRecordMills)
 {
 	auto result = this->captureAsync(waveWriter, maxRecordMills);
 	if (!result)

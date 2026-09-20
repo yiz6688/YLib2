@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include "ASIORender.h"
 #include"ASIODriver.h"
 #include"../../Utils.h"
@@ -30,22 +31,22 @@ WaveBuffer* ASIORender::getBuffer(int channelIndex)
 
 //底层架构已改动: 音频交换统一走 getBuffer(每通道 WaveBuffer), 文件级播放由上层基于 getBuffer 实现,
 //WaveReader 流式播放接口不再支持, 启动即失败以尽早暴露误用
-std::expected<void, std::string> ASIORender::playAsync(WaveReader* waveReader)
+exp_ns::expected<void, std::string> ASIORender::playAsync(WaveReader* waveReader)
 {
-    return std::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, WaveReader 接口不再支持");
+    return exp_ns::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, WaveReader 接口不再支持");
 }
 
-std::expected<void, std::string> ASIORender::waitPlayDone()
+exp_ns::expected<void, std::string> ASIORender::waitPlayDone()
 {
-    return std::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, 无流式播放任务");
+    return exp_ns::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, 无流式播放任务");
 }
 
-std::expected<void, std::string> ASIORender::stopPlay()
+exp_ns::expected<void, std::string> ASIORender::stopPlay()
 {
-    return std::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, 无流式播放任务");
+    return exp_ns::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, 无流式播放任务");
 }
 
-std::expected<void, std::string> ASIORender::play(WaveReader* waveReader)
+exp_ns::expected<void, std::string> ASIORender::play(WaveReader* waveReader)
 {
-    return std::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, WaveReader 接口不再支持");
+    return exp_ns::unexpected("架构已改动: 请通过 getBuffer 写入通道缓冲, WaveReader 接口不再支持");
 }

@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include<fstream>
 #include<string>
 #include<iomanip>

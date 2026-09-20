@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include "WaveRingBuffer.h"
 #include"SampleConv.h"
 

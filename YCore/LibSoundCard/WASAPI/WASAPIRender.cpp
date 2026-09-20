@@ -1,10 +1,9 @@
+﻿#include"base_config.hpp"
 #include<windows.h>
 #include"../../Encoding.h"
 #include<mmdeviceapi.h>
-#include<format>
 #include"WASAPIRender.h"
 #include<Audioclient.h>
-#include<print>
 #include<stdexcept>
 
 
@@ -33,7 +32,7 @@ WASAPIRender::~WASAPIRender()
 
 STAType WASAPIRender::initSTA(std::string_view id)
 {
-	std::println("调用initSTA");
+	fmt_ns::println("调用initSTA");
 	auto fu = this->staWorker.submit([this, id]
 	{
 		return this->init(id);
@@ -41,7 +40,7 @@ STAType WASAPIRender::initSTA(std::string_view id)
 	return fu.get();
 }
 
-std::expected<void, std::string> WASAPIRender::init(std::string_view id)
+exp_ns::expected<void, std::string> WASAPIRender::init(std::string_view id)
 {
 
 	IMMDeviceCollection* pCollection;
@@ -52,12 +51,12 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 	this->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (this->hEvent == INVALID_HANDLE_VALUE)
 	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "CreateEvent fail", GetLastError()));
 	}
 	this->hExit = CreateEvent(NULL, TRUE, FALSE, NULL);
 	if (this->hExit == INVALID_HANDLE_VALUE)
 	{
-		return std::unexpected(std::format("{},hr={}", "CreateEvent fail", GetLastError()));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "CreateEvent fail", GetLastError()));
 	}
 
 
@@ -71,20 +70,20 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取Enumerator失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取Enumerator失败", hr));
 	}
 
 	auto u16Id = Encoding::UTF8ToUTF16(id.data());
 	hr = pEnumerator->GetDevice(u16Id.c_str(), &this->pDevice);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取Device失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取Device失败", hr));
 	}
 
 	hr = this->pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->pAudioClient);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "获取AudioClient失败", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "获取AudioClient失败", hr));
 	}
 
 
@@ -100,40 +99,40 @@ std::expected<void, std::string> WASAPIRender::init(std::string_view id)
 	hr = this->pAudioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, hnsBufferDuration, hnsPeriodicity, &fmtEx, NULL);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient Initialize fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient Initialize fail", hr));
 	}
 
 	REFERENCE_TIME latency_time;
 	hr = pAudioClient->GetStreamLatency(&latency_time);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetStreamLatency fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetStreamLatency fail", hr));
 	}
 
 	hr = pAudioClient->GetBufferSize(&this->bufferFrameSize);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetBufferSize fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetBufferSize fail", hr));
 	}
 
 	hr = pAudioClient->SetEventHandle(hEvent);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient SetEventHandle fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient SetEventHandle fail", hr));
 	}
 
 	//IID_IAudioRenderClient
 	hr = this->pAudioClient->GetService(__uuidof(IAudioRenderClient), (void**)&this->pRenderClient);
 	if (FAILED(hr))
 	{
-		return std::unexpected(std::format("{},hr={}", "AudioClient GetService fail", hr));
+		return exp_ns::unexpected(fmt_ns::format("{},hr={}", "AudioClient GetService fail", hr));
 	}
 
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPIRender::release()
+exp_ns::expected<void, std::string> WASAPIRender::release()
 {
 	if (this->pRenderClient)
 	{
@@ -154,7 +153,7 @@ std::expected<void, std::string> WASAPIRender::release()
 		this->pDevice = nullptr;
 	}
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
 
@@ -171,7 +170,7 @@ STAType WASAPIRender::doPlay()
 		hr = pAudioClient->Start();
 		if (FAILED(hr))
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient Start fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient Start fail", hr));
 		}
 		this->playbackState = PlaybackState::Playing;
 		long numFramesPadding;
@@ -207,7 +206,7 @@ STAType WASAPIRender::doPlay()
 			hr = this->pAudioClient->GetCurrentPadding(&numFramesPadding);
 			if (FAILED(hr))
 			{
-				throw std::runtime_error(std::format("{},hr={}", "AudioClient GetCurrentPadding fail", hr));
+				throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient GetCurrentPadding fail", hr));
 			}
 
 			if (numFramesPadding < 0)
@@ -227,7 +226,7 @@ STAType WASAPIRender::doPlay()
 		hr = this->pAudioClient->Stop();
 		if (FAILED(hr))
 		{
-			throw std::runtime_error(std::format("{},hr={}", "AudioClient Stop fail", hr));
+			throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient Stop fail", hr));
 		}
 		this->playbackState = PlaybackState::Stopped;
 
@@ -236,7 +235,7 @@ STAType WASAPIRender::doPlay()
 	catch (const std::exception& e)
 	{
 		this->playbackState = PlaybackState::Stopped;
-		return std::unexpected(e.what());
+		return exp_ns::unexpected(e.what());
 	}
 }
 
@@ -256,7 +255,7 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	hr = this->pRenderClient->GetBuffer(frameSize, &pData);
 	if (FAILED(hr))
 	{
-		throw std::runtime_error(std::format("{},hr={}", "AudioClient GetBuffer fail", hr));
+		throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient GetBuffer fail", hr));
 	}
 
 	long readSize = this->waveReader->read((char*)pData, byteSize, 0, byteSize);  //失败抛异常
@@ -268,7 +267,7 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	hr = this->pRenderClient->ReleaseBuffer(frameSize, 0);
 	if (FAILED(hr))
 	{
-		throw std::runtime_error(std::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
+		throw std::runtime_error(fmt_ns::format("{},hr={}", "AudioClient ReleaseBuffer fail", hr));
 	}
 	if(readSize == 0)
 	{
@@ -279,16 +278,16 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	return STAType();
 }
 
-std::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
+exp_ns::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
 {
 	if (this->playbackState == PlaybackState::Starting || this->playbackState == PlaybackState::Playing)
 	{
-		return std::unexpected("Capture is already running");
+		return exp_ns::unexpected("Capture is already running");
 	}
 	auto fmt = waveReader->getWaveFormat();
 	if (fmt != this->waveFormat)
 	{
-		return std::unexpected("WaveFormat mismatch");
+		return exp_ns::unexpected("WaveFormat mismatch");
 	}
 
 	this->waveReader = waveReader;
@@ -306,10 +305,10 @@ std::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
 
 
 
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPIRender::waitPlayDone()
+exp_ns::expected<void, std::string> WASAPIRender::waitPlayDone()
 {
 	if (this->renderFuture.valid())
 	{
@@ -321,17 +320,17 @@ std::expected<void, std::string> WASAPIRender::waitPlayDone()
 	}
 }
 
-std::expected<void, std::string> WASAPIRender::stopPlay()
+exp_ns::expected<void, std::string> WASAPIRender::stopPlay()
 {
 	if (this->playbackState != PlaybackState::Stopped && this->playbackState != PlaybackState::Stopping)
 	{
 		this->playbackState = PlaybackState::Stopping; //标记为停止中
 		SetEvent(this->hExit);  //触发退出事件
 	}
-	return std::expected<void, std::string>();
+	return exp_ns::expected<void, std::string>();
 }
 
-std::expected<void, std::string> WASAPIRender::play(WaveReader* waveReader)
+exp_ns::expected<void, std::string> WASAPIRender::play(WaveReader* waveReader)
 {
 	auto result = this->playAsync(waveReader);
 	if (!result)

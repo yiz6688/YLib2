@@ -3,13 +3,24 @@ cmake_minimum_required(VERSION 4.0)
 
 #项目名称
 project(YCore)
-#设置C++标准23
-set(CMAKE_CXX_STANDARD 23)
+
+# ===== C++ 标准选择开关 =====
+# 另一台只支持 C++17 的机器: 把下面的开关改为 ON
+# C++17 模式下, 库内部用 fmt/gsl/内置Expected 替代标准库 expected/format/print/span
+# (base_config.hpp 按语言标准自动切换 fmt_ns/span_ns/exp_ns)
+option(YCORE_USE_CPP17 "使用 C++17 兼容模式(用 fmt/gsl 替代标准库 expected/format/print/span)" OFF)
+if(YCORE_USE_CPP17)
+    set(CMAKE_CXX_STANDARD 17)
+else()
+    set(CMAKE_CXX_STANDARD 23)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
     #设置编译选项
     add_compile_options(/utf-8)
+    #MSVC默认定义min/max宏, 会破坏std::min/std::max, 统一禁用
+    add_compile_definitions(NOMINMAX)
 else()
     #-Wall 开启常用警告
     #-Wextra 开启额外的警告
@@ -32,8 +43,10 @@ file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS ./YCore/*.cpp)
 
 #生成静态库
 add_library(${LIBNAME} STATIC ${SRC_FILES})
-#GCC添加实验性质库支持
-target_link_libraries(${LIBNAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:stdc++exp>)   
+#GCC添加实验性质库支持(C++23实验特性, C++17模式不需要)
+if(NOT YCORE_USE_CPP17)
+    target_link_libraries(${LIBNAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:stdc++exp>)
+endif()   
 
 target_link_directories(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib)
 
@@ -43,6 +56,13 @@ target_link_libraries(${LIBNAME} PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,fftw3,libff
 
 #设置包含目录
 target_include_directories(${LIBNAME} PUBLIC ./YCore)
+
+#包含format库
+add_subdirectory(./YCore/third_party/fmt)
+#包含gsl库
+add_subdirectory(./YCore/third_party/GSL)
+
+target_link_libraries(${LIBNAME} PRIVATE fmt::fmt Microsoft.GSL::GSL)
 
 
 add_subdirectory(Test)

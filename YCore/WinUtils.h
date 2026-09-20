@@ -1,11 +1,10 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<Windows.h>
-#include<format>
 #include<string>
 #include<string_view>
 #include<stdexcept>
 #include"Encoding.h"
-#include<print>
 
 
 class WinUtils
@@ -14,7 +13,7 @@ public:
 	static std::string getError(const std::string& func)
 	{
 		auto code = GetLastError();
-		return std::format("{} fail,code:{}", func, code);
+		return fmt_ns::format("{} fail,code:{}", func, code);
 	}
 
 
@@ -95,7 +94,7 @@ public:
 				int code = GetLastError();
 				if(code != ERROR_ALREADY_EXISTS)
 				{
-					throw std::runtime_error(std::format("CreateDirectoryW fail,code:{}", code));
+					throw std::runtime_error(fmt_ns::format("CreateDirectoryW fail,code:{}", code));
 				}
 			}
 			pos++;

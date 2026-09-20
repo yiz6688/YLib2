@@ -1,21 +1,19 @@
+﻿#include"base_config.hpp"
 #include<cmath>
 #include<algorithm>
 #include "FindDelay.h"
 #include"fftw3.h"
 #include<complex>
-#include<bit>
-#include<span>
 #include<memory>
 #include"FFT.h"
-#include<print>
 
 
-std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> y)
+std::vector<double> FindDelay::correlate(span_ns::span<double> x, span_ns::span<double> y)
 {
 	auto xLen = x.size();
 	auto yLen=  y.size();
     auto sampleNum = xLen + yLen - 1;
-    int fftSize =  std::bit_ceil(sampleNum);  //等价于nextpow2
+    int fftSize =  ycore::bit_ceil(sampleNum);  //等价于nextpow2
     int M = fftSize / 2 + 1;
 
 
@@ -76,12 +74,12 @@ std::vector<double> FindDelay::correlate(std::span<double> x, std::span<double> 
 	return corr;
 }
 
-std::vector<double> FindDelay::correlate2(std::span<double> x, std::span<double> y)
+std::vector<double> FindDelay::correlate2(span_ns::span<double> x, span_ns::span<double> y)
 {
 	auto xLen = x.size();
 	auto yLen=  y.size();
     auto sampleNum = xLen + yLen - 1;
-    int fftSize =  std::bit_ceil(sampleNum);  //等价于nextpow2
+    int fftSize =  ycore::bit_ceil(sampleNum);  //等价于nextpow2
 
     FFT fft(fftSize);
     
@@ -116,13 +114,13 @@ std::vector<double> FindDelay::correlate2(std::span<double> x, std::span<double>
 	return corr;
 }
 
-int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y) 
+int  FindDelay::gcc_phat_delay(span_ns::span<double> x, span_ns::span<double> y) 
 {
 	auto xLen = x.size();
 	auto yLen=  y.size();
     auto M = std::max(xLen, yLen);
     auto sampleNum = 2*M - 1;
-    int fftSize =  std::bit_ceil(static_cast<unsigned>(sampleNum));  //等价于nextpow2
+    int fftSize =  ycore::bit_ceil(static_cast<unsigned>(sampleNum));  //等价于nextpow2
 
     FFT2 fft(fftSize);
 
@@ -146,7 +144,7 @@ int  FindDelay::gcc_phat_delay(std::span<double> x, std::span<double> y)
 
     // for(int i=0; i< fftSize; i++)
     // {
-    //     std::println("{:.12f},{:.12f}", TD[i].real(), TD[i].imag());
+    //     fmt_ns::println("{:.12f},{:.12f}", TD[i].real(), TD[i].imag());
     // }
 
     std::vector<double> corr(xLen + yLen - 1); 

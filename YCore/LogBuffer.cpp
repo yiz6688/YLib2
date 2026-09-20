@@ -1,5 +1,5 @@
+﻿#include"base_config.hpp"
 #include "LogBuffer.h"
-#include<format>
 #include<chrono>
 
 void LogBuffer::writeLog(const LogBuffer& lb)
@@ -63,7 +63,7 @@ void LogBuffer::append(int level, const std::string& log)
 	#endif
 
 	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-	auto data = std::format("{:%Y-%m-%d %H:%M:%S}.{:03} {:<8}{}", std::chrono::floor<std::chrono::seconds>(now), ms.count(), header, log);
+	auto data = fmt_ns::format("{:%Y-%m-%d %H:%M:%S}.{:03} {:<8}{}", std::chrono::floor<std::chrono::seconds>(now), ms.count(), header, log);
 
 	this->logLst.push_back(data);
 }

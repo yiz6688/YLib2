@@ -1,8 +1,13 @@
+#include"base_config.hpp"
+#include<thread>
 #include"STAWorker.h"
 #include<Windows.h>
 #include<process.h>
-#include<print>
 using namespace std;
+using exp_ns::expected;
+using exp_ns::unexpected;
+using fmt_ns::println;
+using fmt_ns::print;
 
 
 
@@ -109,7 +114,7 @@ long STAWorker::consumer()
     if (status == std::future_status::ready)
     {
         std::promise<STAType> p;
-        p.set_value(std::unexpected("111"));
+        p.set_value(exp_ns::unexpected("111"));
         //线程结束了就返回
         return p.get_future();
     }
@@ -129,7 +134,7 @@ STAFuture STAWorker::submit(STAFunc &&func)
     if (status == std::future_status::ready)
     {
         std::promise<STAType> p;
-        p.set_value(std::unexpected("111"));
+        p.set_value(exp_ns::unexpected("111"));
         //线程结束了就返回
         return p.get_future();
     }
@@ -167,7 +172,7 @@ void STAWorker::UnitTest()
         vec.push_back(std::move(fu2));
 
 
-        auto fu3 =  worker.submit([]->STAType{
+        auto fu3 =  worker.submit([]() -> STAType{
             println("执行func3");
             this_thread::sleep_for(chrono::seconds(1));
             println("func3执行结束");

@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include"fftw3.h"
 #include<complex>
-#include<span>
 
 using cpx = std::complex<double>;
 
@@ -13,7 +13,7 @@ public:
     {
 
         double* td = fftw_alloc_real(fftSize);
-        this->tdSpan = std::span<double>(td, fftSize);
+        this->tdSpan = span_ns::span<double>(td, fftSize);
 
         int size = fftSize / 2;
         if(fftSize % 2 == 0)
@@ -22,7 +22,7 @@ public:
         }
 
         fftw_complex *fd = fftw_alloc_complex(size);
-        this->fdSpan = std::span<cpx>(reinterpret_cast<cpx*>(fd), size);
+        this->fdSpan = span_ns::span<cpx>(reinterpret_cast<cpx*>(fd), size);
 
         this->pfft = fftw_plan_dft_r2c_1d(fftSize, td, fd, FFTW_ESTIMATE);
         this->pifft = fftw_plan_dft_c2r_1d(fftSize, fd, td, FFTW_ESTIMATE);
@@ -42,7 +42,7 @@ public:
     }
 
 
-    void fft(std::span<double> input)
+    void fft(span_ns::span<double> input)
     {
         if(input.data() != this->tdSpan.data())
         {
@@ -54,7 +54,7 @@ public:
         fftw_execute(this->pfft);
     }
 
-    void ifft(std::span<cpx> input)
+    void ifft(span_ns::span<cpx> input)
     {
         if(input.data() != this->fdSpan.data())
         {
@@ -71,19 +71,19 @@ public:
         return this->tdSpan.size();
     }
 
-    std::span<double> getTD()
+    span_ns::span<double> getTD()
     {
         return this->tdSpan;
     }
 
-    std::span<cpx> getFD()
+    span_ns::span<cpx> getFD()
     {
         return this->fdSpan;
     }
 
 private:
-    std::span<double> tdSpan;  //time_domain ,时域信号
-    std::span<cpx>  fdSpan;    //freq_domain ,频域信号    
+    span_ns::span<double> tdSpan;  //time_domain ,时域信号
+    span_ns::span<cpx>  fdSpan;    //freq_domain ,频域信号    
 
     fftw_plan pfft;
     fftw_plan pifft;
@@ -99,10 +99,10 @@ public:
     {
 
         fftw_complex* td = fftw_alloc_complex(fftSize);
-        this->tdSpan = std::span<cpx>(reinterpret_cast<cpx*>(td), fftSize);
+        this->tdSpan = span_ns::span<cpx>(reinterpret_cast<cpx*>(td), fftSize);
 
         fftw_complex *fd = fftw_alloc_complex(fftSize);
-        this->fdSpan = std::span<cpx>(reinterpret_cast<cpx*>(fd), fftSize);
+        this->fdSpan = span_ns::span<cpx>(reinterpret_cast<cpx*>(fd), fftSize);
 
         this->pfft = fftw_plan_dft_1d(fftSize, td, fd, FFTW_FORWARD, FFTW_ESTIMATE);
         this->pifft = fftw_plan_dft_1d(fftSize, fd, td, FFTW_BACKWARD, FFTW_ESTIMATE);
@@ -122,7 +122,7 @@ public:
     }
 
 
-    void fft(std::span<double> input)
+    void fft(span_ns::span<double> input)
     {
         
         for(int i=0;i<input.size(); i++)
@@ -137,7 +137,7 @@ public:
         fftw_execute(this->pfft);
     }
 
-    void ifft(std::span<cpx> input)
+    void ifft(span_ns::span<cpx> input)
     {
         if(input.data() != this->fdSpan.data())
         {
@@ -154,19 +154,19 @@ public:
         return this->tdSpan.size();
     }
 
-    std::span<cpx> getTD()
+    span_ns::span<cpx> getTD()
     {
         return this->tdSpan;
     }
 
-    std::span<cpx> getFD()
+    span_ns::span<cpx> getFD()
     {
         return this->fdSpan;
     }
 
 private:
-    std::span<cpx> tdSpan;      //time_domain ,时域信号
-    std::span<cpx>  fdSpan;    //freq_domain ,频域信号    
+    span_ns::span<cpx> tdSpan;      //time_domain ,时域信号
+    span_ns::span<cpx>  fdSpan;    //freq_domain ,频域信号    
 
     fftw_plan pfft;
     fftw_plan pifft;

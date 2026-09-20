@@ -1,7 +1,7 @@
+﻿#include"base_config.hpp"
 #include "WaveBuffer.h"
 #include<limits>
 #include<stdexcept>
-#include<bit>
 #include<cmath>
 #include<algorithm>
 #include<cstring>
@@ -38,7 +38,7 @@ WaveBuffer::WaveBuffer(SampleType type, int sampleLen, int channelNum)
     {
         throw std::invalid_argument("缓冲区帧数超出范围");
     }
-    unsigned frameCount = std::bit_ceil(static_cast<unsigned>(sampleLen) + 1);
+    unsigned frameCount = ycore::bit_ceil(static_cast<unsigned>(sampleLen) + 1);
     this->_pRing = std::make_unique<ByteRing>(frameCount, static_cast<unsigned>(this->_frameSize));
     this->_pRing->setLimit(static_cast<unsigned>(sampleLen)); //门限: 有效可用空间恰好 sampleLen 帧
 
@@ -229,7 +229,7 @@ int WaveBuffer::readBytes(char *ptr, int byteSize)
 }
 
 //锁定读取缓冲(perChSize 为单通道字节数): 单通道按位宽对齐后乘通道数得到交织总字节
-std::span<char> WaveBuffer::getReadBuffer(int perChSize)
+span_ns::span<char> WaveBuffer::getReadBuffer(int perChSize)
 {
     int size = (perChSize / this->_byteDepth) * this->_byteDepth;
     size *= this->_chnNum;
@@ -242,7 +242,7 @@ int WaveBuffer::releaseReadBuffer()
 }
 
 //锁定写入缓冲(perChSize 为单通道字节数): 单通道按位宽对齐后乘通道数得到交织总字节
-std::span<char> WaveBuffer::getWriteBuffer(int perChSize)
+span_ns::span<char> WaveBuffer::getWriteBuffer(int perChSize)
 {
     int size = (perChSize / this->_byteDepth) * this->_byteDepth;
     size *= this->_chnNum;

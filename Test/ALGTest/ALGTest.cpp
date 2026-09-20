@@ -1,10 +1,14 @@
-#include<print>
+#include"base_config.hpp"
 #include"../../YCore/LibAlgorithm/findDelay.h"
 #include"../../YCore/LibAlgorithm/SweepTest.h"
 #include"../../YCore/WaveReader.h"
 #include"../../YCore/WinUtils.h"
 #include"../../YCore/FIleUtils.h"
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 
 
@@ -20,7 +24,7 @@ void corrTest()
     {
         print("{:.3f} ", x);
     }
-    println();
+    println("");
     corr = fd.correlate2(x, y);
 
     for(auto x : corr)
@@ -38,7 +42,7 @@ void corrTest2()
     FindDelay fd;
 
     int delay = fd.gcc_phat_delay(x, y);
-    std::println("{}", delay);
+    fmt_ns::println("{}", delay);
 }
 
 
@@ -64,7 +68,7 @@ void sweepTest2()
     auto res = reader->readFloat(data.data(), num);
     // if(!res)
     // {
-    //     std::println("读取文件失败:{}", res.error());
+    //     fmt_ns::println("读取文件失败:{}", res.error());
     //     return;
     // }
 
@@ -87,13 +91,13 @@ int main()
 
     *ptr = 'a';
 
-    std::println("{}", *ptr);
+    fmt_ns::println("{}", *ptr);
 
     delete ptr;
     ptr = nullptr;
     *ptr = 'b';
 
-    std::println("{}", *ptr);
+    fmt_ns::println("{}", *ptr);
 
 
     return 0;
@@ -106,6 +110,6 @@ int main()
         k++;
     }
 
-    std::println("{}, {}, {}", vec.capacity(), vec.size(), k);
+    fmt_ns::println("{}, {}, {}", vec.capacity(), vec.size(), k);
     return 0;
 }

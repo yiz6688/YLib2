@@ -1,6 +1,10 @@
-#include<print>
+#include"base_config.hpp"
 #include"../../YCore/LibSoundCard/WASAPI/WASAPIManager.h"
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 
 
@@ -12,13 +16,13 @@ int main()
     //Sleep(1000);
 
     //auto fu = staWorker.submit([]{
-    //    std::println("test1");
+    //    fmt_ns::println("test1");
     //    return STAType();
     //});
     //auto r1 = fu.get();
     //Sleep(1000);
     // auto fu2 = staWorker.submit([]{
-    //     std::println("test2");
+    //     fmt_ns::println("test2");
     //     return STAType();
     // });
 
@@ -52,7 +56,7 @@ int main()
 
     if(render == nullptr)
     {
-        std::println("播放器初始化失败");
+        fmt_ns::println("播放器初始化失败");
     }
 
     

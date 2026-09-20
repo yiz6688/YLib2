@@ -1,3 +1,4 @@
+#include"base_config.hpp"
 #define DLLTEST_EXPORTS
 #include "DllTest.h"
 

@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #define _USE_MATH_DEFINES
 #include<algorithm>
 #include<cmath>

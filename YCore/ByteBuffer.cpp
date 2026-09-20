@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include "ByteBuffer.h"
 
 #include <cstring>
@@ -85,20 +86,20 @@ char* ByteBuffer::data()
     return m_data;
 }
 
-std::span<char> ByteBuffer::writableSpan(std::size_t len)
+span_ns::span<char> ByteBuffer::writableSpan(std::size_t len)
 {
     ensureWritable(len);
     char* p = m_data + m_position;
     m_position += len;
-    return std::span<char>(p, len);
+    return span_ns::span<char>(p, len);
 }
 
-std::span<const char> ByteBuffer::readableSpan(std::size_t len)
+span_ns::span<const char> ByteBuffer::readableSpan(std::size_t len)
 {
     ensureReadable(len);
     const char* p = m_data + m_position;
     m_position += len;
-    return std::span<const char>(p, len);
+    return span_ns::span<const char>(p, len);
 }
 
 // ---------- 越界检查 ----------

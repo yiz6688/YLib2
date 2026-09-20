@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include <stdexcept>
 #include<string>
 #include<vector>
-#include<format>
 #include<memory>
 
 #include<Windows.h>

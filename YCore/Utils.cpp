@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include "Utils.h"
 
 std::array<char, 2> Utils::toHex(char ch)

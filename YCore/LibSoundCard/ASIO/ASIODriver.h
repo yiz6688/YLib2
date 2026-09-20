@@ -1,10 +1,10 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<string>
 #include<vector>
 #include<memory>
 #include<atomic>
 #include<mutex>
-#include<expected>
 #include"../STAWorker.h"
 #include"ASIODevice.h"
 #include"ASIOCapture.h"
@@ -55,9 +55,9 @@ public:
 
 public:
     //获取播放客户端; bufferMills: 客户端每通道缓冲时长(ms), 0=默认(引擎环形容量), 与引擎缓冲独立
-    std::expected<ASIORender*, std::string> createRender(int channelMask, int bufferMills = 0);
+    exp_ns::expected<ASIORender*, std::string> createRender(int channelMask, int bufferMills = 0);
     //获取录音客户端; bufferMills: 客户端每通道缓冲时长(ms), 0=默认(引擎环形容量), 与引擎缓冲独立
-    std::expected<ASIOCapture*, std::string> createCapture(int channelMask, int bufferMills = 0);
+    exp_ns::expected<ASIOCapture*, std::string> createCapture(int channelMask, int bufferMills = 0);
 
     //注册/注销客户端(客户端对象构造/析构时调用), 触发聚合视图变化
     _Client2* registerClient(const std::vector<int>& channels, int type, int bufferMills = 0);
@@ -142,9 +142,9 @@ public:
 public:
     //创建驱动, notifyMills: 通知时长(ms), 默认10ms, 有效范围10-50ms; maxDelayMills: 0=自动
     //exclusiveMode: 独占模式(每通道只允许一个客户端, 输出免混频直拷), 初始化指定不可更改
-    static std::expected<ASIODriver*, std::string> createDriver(CLSID clsid, int notifyMills = 10,
+    static exp_ns::expected<ASIODriver*, std::string> createDriver(CLSID clsid, int notifyMills = 10,
         int maxDelayMills = 0, bool exclusiveMode = false);
-    static std::expected<void, std::string> releaseDriver(ASIODriver* driver);
+    static exp_ns::expected<void, std::string> releaseDriver(ASIODriver* driver);
 
 public:
     //混频峰值限幅(防削波): 多客户端混频求和后峰值超过1.0时, 整块等比缩放

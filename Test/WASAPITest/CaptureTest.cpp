@@ -1,6 +1,10 @@
-#include<print>
+#include"base_config.hpp"
 #include"../../YCore/LibSoundCard/WASAPI/WASAPIManager.h"
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 int main()
 {
@@ -20,7 +24,7 @@ int main()
 
     if(capture == nullptr)
     {
-        std::println("播放器初始化失败");
+        fmt_ns::println("播放器初始化失败");
     }
 
     

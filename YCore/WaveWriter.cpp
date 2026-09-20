@@ -1,4 +1,5 @@
-﻿#include"WaveWriter.h"
+﻿#include"base_config.hpp"
+#include"WaveWriter.h"
 #include"FileStream.h"
 #include<stdexcept>
 

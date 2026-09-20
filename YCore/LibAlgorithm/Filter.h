@@ -1,11 +1,10 @@
 #pragma once
-#include<numbers>
+#include"base_config.hpp"
 #include<cmath>
-#include<print>
 #include<complex>
 
 #ifndef M_PI
-	constexpr auto M_PI = std::numbers::pi;
+	constexpr auto M_PI = ycore::pi;
 	//#define M_PI 3.14159265358979323846
 #endif
 

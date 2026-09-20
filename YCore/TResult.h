@@ -1,19 +1,19 @@
 #pragma once
-#include<expected>
+#include"base_config.hpp"
 #include<memory>
 #include<string>
 
 
 
 template<typename T, typename E=std::string>
-using TResult = std::expected<T, E>;
+using TResult = exp_ns::expected<T, E>;
 
 template<typename T>
 using TPtr = std::unique_ptr<T>;
 
 
 template<typename T, typename E=std::string>
-using TPResult = std::expected<TPtr<T>, E>;
+using TPResult = exp_ns::expected<TPtr<T>, E>;
 
 
 template<typename T, typename... Args>
@@ -25,5 +25,5 @@ inline TPResult<T> make_ok(Args&&... args)
 template<typename T, typename E=std::string>
 inline TPResult<T> make_err(E&& err)
 {
-    return std::unexpected(std::forward<E>(err));
+    return exp_ns::unexpected(std::forward<E>(err));
 }

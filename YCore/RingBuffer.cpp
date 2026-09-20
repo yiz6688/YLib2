@@ -1,11 +1,11 @@
+#include"base_config.hpp"
 #include"RingBuffer.h"
 #include<algorithm>
-#include<bit>
 #include<limits>
 #include<cassert>
 
 RingBuffer::RingBuffer(unsigned bufferSize)
-	:_capacity{ std::bit_ceil(bufferSize) }, _mask{ _capacity - 1 }, _gap{ 1 }, 
+	:_capacity{ ycore::bit_ceil(bufferSize) }, _mask{ _capacity - 1 }, _gap{ 1 }, 
 	_buffer(_mask + 1), _ptr{ _buffer.data() }
 {
 	this->_cap_aligned = (this->_capacity / this->_gap) * this->_gap;
@@ -173,7 +173,7 @@ int RingBuffer::write(const char* data, int offset, int size)
 	}
 
 	wpos += writeableBytes; //修正写指针
-	this->write_pos.store(wpos, std::memory_order::release);
+	this->write_pos.store(wpos, std::memory_order_release);
 
 	return writeableBytes;
 }
@@ -218,7 +218,7 @@ int RingBuffer::writeTo(RingBuffer& ring, int size)
 	return ring.readFrom(*this, size);
 }
 
-std::span<char> RingBuffer::getWriteBuffer(unsigned size)
+span_ns::span<char> RingBuffer::getWriteBuffer(unsigned size)
 {
 	auto wpos = this->write_pos.load(std::memory_order_relaxed);
 	auto writePos = wpos & this->_mask;  //相当于求余
@@ -226,7 +226,7 @@ std::span<char> RingBuffer::getWriteBuffer(unsigned size)
 
 	if(size == 0 || this->write_lock_len != 0)
 	{
-		return std::span<char>(wptr, 0);
+		return span_ns::span<char>(wptr, static_cast<std::size_t>(0));
 	}
 
 	auto rpos = this->read_pos.load(std::memory_order_acquire);
@@ -247,7 +247,7 @@ std::span<char> RingBuffer::getWriteBuffer(unsigned size)
 	}
 
 	this->write_pos.store(wpos, std::memory_order_release);
-    return std::span<char>(wptr, this->write_lock_len);
+    return span_ns::span<char>(wptr, this->write_lock_len);
 }
 
 int RingBuffer::releaseWriteBuffer(TYPE1 size)
@@ -289,7 +289,7 @@ int RingBuffer::releaseWriteBuffer()
    return this->releaseWriteBuffer(-1);
 }
 
-std::span<char> RingBuffer::getReadBuffer(TYPE1 size)
+span_ns::span<char> RingBuffer::getReadBuffer(TYPE1 size)
 {
 	auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
@@ -298,7 +298,7 @@ std::span<char> RingBuffer::getReadBuffer(TYPE1 size)
 
 	if(size == 0 || this->read_lock_len != 0)
 	{
-		return std::span<char>(rptr, 0);
+		return span_ns::span<char>(rptr, static_cast<std::size_t>(0));
 	}
 	
 	auto wpos = this->write_pos.load(std::memory_order_acquire);
@@ -319,7 +319,7 @@ std::span<char> RingBuffer::getReadBuffer(TYPE1 size)
 	}
 
 	this->read_pos.store(rpos, std::memory_order_release);
-    return std::span<char>(rptr, this->read_lock_len);
+    return span_ns::span<char>(rptr, this->read_lock_len);
 }
 
 int RingBuffer::releaseReadBuffer(unsigned size)

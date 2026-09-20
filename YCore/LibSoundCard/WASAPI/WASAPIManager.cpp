@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"WASAPIManager.h"
 
 #include<initguid.h>
@@ -7,7 +8,6 @@
 #include<Audioclient.h>
 #include<Functiondiscoverykeys_devpkey.h>
 #include"../../Encoding.h"
-#include<print>
 
 std::vector<EndPointInfo> WASAPIManager::getEndPoints(EDataFlow eDataFlow, DWORD dwMask)
 {
@@ -109,7 +109,7 @@ WASAPIRender *WASAPIManager::createRender(EndPointInfo &&info, WaveFormat fmt)
 	STAType result = render->initSTA(info.id);
 	if(!result)
 	{
-		std::println("init 失败: {}", result.error());
+		fmt_ns::println("init 失败: {}", result.error());
 		return nullptr;
 	}
 
@@ -123,7 +123,7 @@ WASAPICapture *WASAPIManager::createCapture(EndPointInfo &&info, WaveFormat fmt)
 	STAType result = capture->initSTA(info.id);
 	if(!result)
 	{
-		std::println("init 失败: {}", result.error());
+		fmt_ns::println("init 失败: {}", result.error());
 		return nullptr;
 	}
 

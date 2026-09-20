@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<string_view>
 #include"../WaveWriter.h"
-#include<expected>
 #include"../WaveFormat.h"
 
 //录音的状态
@@ -25,13 +25,13 @@ public:
 	//启动录制,带回调
 	//virtual bool start_capture(std::function<void(ByteArg&)> callback) = 0;
 
-	virtual std::expected<void, std::string> captureAsync(WaveWriter* writer, int maxRecordMills) = 0;
+	virtual exp_ns::expected<void, std::string> captureAsync(WaveWriter* writer, int maxRecordMills) = 0;
 
-	virtual std::expected<void, std::string> waitCaptureDone() = 0;
+	virtual exp_ns::expected<void, std::string> waitCaptureDone() = 0;
 
-	virtual std::expected<void, std::string> stopCapture() = 0;
+	virtual exp_ns::expected<void, std::string> stopCapture() = 0;
 
-	virtual std::expected<void, std::string> capture(WaveWriter* writer, int maxRecordMills) = 0;
+	virtual exp_ns::expected<void, std::string> capture(WaveWriter* writer, int maxRecordMills) = 0;
 
 	virtual CaptureState getCaptureState() = 0;
 

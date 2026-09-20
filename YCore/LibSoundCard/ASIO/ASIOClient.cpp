@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"ASIOClient.h"
 #include"../../BitConverter.h"
 #include"ASIODriver.h"
@@ -8,7 +9,7 @@ TResult<void> ASIOClient::init(CLSID clsid)
 
     if (!aa)
     {
-        return std::unexpected(aa.error());  //返回失败。
+        return exp_ns::unexpected(aa.error());  //返回失败。
     }
 
     return TResult<void>();

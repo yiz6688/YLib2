@@ -1,3 +1,4 @@
+﻿#include"base_config.hpp"
 #include"waveFormat.h"
 #include<stdexcept>
 #include<cstring>
@@ -84,7 +85,7 @@ std::string WaveFormat::toString() const
         return "unknown fmt";
     }
 
-    return std::format("fmtTag:{} sampleRate:{} channels:{} bitsPerSample:{} blockAlign:{}",
+    return fmt_ns::format("fmtTag:{} sampleRate:{} channels:{} bitsPerSample:{} blockAlign:{}",
         fmtTag, this->sampleRate, this->channels, this->bitsPerSample, this->blockAlign);
 
 

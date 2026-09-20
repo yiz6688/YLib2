@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<cstdint>
 #include<cmath>
 #include<string>

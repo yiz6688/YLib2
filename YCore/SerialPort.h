@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include<string>
-#include<expected>
 #include"TResult.h"
 class SerialPort
 {

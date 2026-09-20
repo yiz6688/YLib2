@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -85,9 +85,9 @@ public:
 
     // 预留 len 字节供外部写入：返回 [position, position+len)，等价于写入，position 自动推进；
     // 实际数据拷贝由外部保证。
-    std::span<char> writableSpan(std::size_t len);
+    span_ns::span<char> writableSpan(std::size_t len);
     // 读取 len 字节视图：返回 [position, position+len)，等价于读取，position 自动推进。
-    std::span<const char> readableSpan(std::size_t len);
+    span_ns::span<const char> readableSpan(std::size_t len);
 
     // ---------- 读（相对，推进 position） ----------
     char readByte();

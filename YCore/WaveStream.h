@@ -1,4 +1,5 @@
-#pragma once
+﻿#pragma once
+#include"base_config.hpp"
 #include"Stream.h"
 #include"WaveFormat.h"
 #include"TResult.h"

@@ -1,4 +1,4 @@
-#include<print>
+#include"base_config.hpp"
 #include<windows.h>
 #include"../../YCore/WinUtils.h"
 #include<cstddef>
@@ -10,6 +10,10 @@
 #include"WaveBuffer.h"
 
 using namespace std;
+using fmt_ns::println;
+using fmt_ns::print;
+using exp_ns::expected;
+using exp_ns::unexpected;
 
 
 
@@ -79,7 +83,7 @@ void waveBufferTest()
     for(int k = 0; k<30; k++)
     {
         int size = wbuf.writeBytes(src, sampleNum * chnNum * byteDepth);
-        std::println("写入字节数:{}", size);
+        fmt_ns::println("写入字节数:{}", size);
 
         
         WaveMix mix;
@@ -96,7 +100,7 @@ void waveBufferTest()
         }
 
         int nFrame = wbuf.readRaw(mix, sampleNum + 3);
-        std::println("读取的帧数:{}", nFrame);
+        fmt_ns::println("读取的帧数:{}", nFrame);
 
         for(int ch = 0; ch< chnNum; ch++)
         {
@@ -106,15 +110,15 @@ void waveBufferTest()
                 int val = n * pow(10, ch) + 1;
                 if(vec[n] != val)
                 {
-                    std::println("通道:{}, 采样点:{}, 读取值:{}, 理论值:{}", ch, n, (int)vec[n], val);
+                    fmt_ns::println("通道:{}, 采样点:{}, 读取值:{}, 理论值:{}", ch, n, (int)vec[n], val);
                     return;
                 }
             }
         }
-        std::println("{} 读取成功",k );
+        fmt_ns::println("{} 读取成功",k );
 
         nFrame = wbuf2.writeRaw(mix, nFrame);
-        std::println("联合写入:{}", nFrame);
+        fmt_ns::println("联合写入:{}", nFrame);
         vector<I> total2(total.size());
         char* ptr1 = reinterpret_cast<char*>(total2.data());
         size = wbuf2.readBytes(ptr1, total2.size() * byteDepth);
@@ -122,12 +126,12 @@ void waveBufferTest()
         {
             if(total[i] != total2[i])
             {
-                std::println("读取值:{}, 理论值:{}", (int)total2[i], (int)total[i]);
+                fmt_ns::println("读取值:{}, 理论值:{}", (int)total2[i], (int)total[i]);
                 return;
             }
         }
 
-        std::println("读取字节数:{}, 核对成功", size);
+        fmt_ns::println("读取字节数:{}, 核对成功", size);
     }
     
 
@@ -191,7 +195,7 @@ void waveBufferTest2()
     for(int k = 0; k<30; k++)
     {
         int size = wbuf.writeBytes(src, sampleNum * chnNum * byteDepth);
-        std::println("写入字节数:{}", size);
+        fmt_ns::println("写入字节数:{}", size);
 
         
         WaveMix mix;
@@ -208,7 +212,7 @@ void waveBufferTest2()
         }
 
         int nFrame = wbuf.readSample(mix, sampleNum + 3);
-        std::println("读取的帧数:{}", nFrame);
+        fmt_ns::println("读取的帧数:{}", nFrame);
 
         for(int ch = 0; ch< chnNum; ch++)
         {
@@ -218,12 +222,12 @@ void waveBufferTest2()
                 float val = 0.05 * n - ch * 0.1;
                 if(equal(vec[n], val) == false)
                 {
-                    std::println("通道:{}, 采样点:{}, 读取值:{}, 理论值:{}", ch, n, vec[n], val);
+                    fmt_ns::println("通道:{}, 采样点:{}, 读取值:{}, 理论值:{}", ch, n, vec[n], val);
                     return;
                 }
             }
         }
-        std::println("{} 读取成功",k );
+        fmt_ns::println("{} 读取成功",k );
     }
     
 
@@ -240,7 +244,7 @@ int main()
     // if(!rxx)
     // {
     //     auto error = rxx.error();
-    //     std::println("{}", error);
+    //     fmt_ns::println("{}", error);
     // }
 
 
