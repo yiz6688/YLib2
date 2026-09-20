@@ -48,11 +48,15 @@ if(NOT YCORE_USE_CPP17)
     target_link_libraries(${LIBNAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:stdc++exp>)
 endif()   
 
-target_link_directories(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib)
+#FFTW库目录(用户重编译, 区分DEBUG/RELEASE): fftw3.lib/fftw3d.lib(MSVC), libfftw3.a/libfftw3d.a(MinGW)
+target_link_directories(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/fftw)
 
-#target_link_libraries(${LIBNAME} PUBLIC ${CMAKE_SOURCE_DIR}/YCore/LibAlgorithm/lib/libfftw3.a)
-
-target_link_libraries(${LIBNAME} PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,fftw3,libfftw3.a>)
+#按编译器与构建配置选库: debug带d后缀, release不带
+target_link_libraries(${LIBNAME} PUBLIC
+    $<$<CXX_COMPILER_ID:MSVC>:$<$<CONFIG:Debug>:fftw3d>>
+    $<$<CXX_COMPILER_ID:MSVC>:$<$<NOT:$<CONFIG:Debug>>:fftw3>>
+    $<$<CXX_COMPILER_ID:GNU>:$<$<CONFIG:Debug>:fftw3d>>
+    $<$<CXX_COMPILER_ID:GNU>:$<$<NOT:$<CONFIG:Debug>>:fftw3>>)
 
 #设置包含目录
 target_include_directories(${LIBNAME} PUBLIC ./YCore)
