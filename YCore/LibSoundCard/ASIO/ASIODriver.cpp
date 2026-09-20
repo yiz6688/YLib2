@@ -150,8 +150,12 @@ ASIODriver::~ASIODriver()
 
     this->clients.clear();
     this->gcClients.clear();
-    this->viewGC.clear();
-    this->chViews.reset();
+    this->cleanupGC();   //释放旧视图
+    if (auto* v = this->chViews.load(std::memory_order_relaxed))
+    {
+        delete v;   //释放当前视图
+        this->chViews.store(nullptr, std::memory_order_relaxed);
+    }
 }
 
 std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask, int bufferMills)
@@ -230,9 +234,9 @@ _Client2* ASIODriver::registerClient(const std::vector<int>& channels, int type,
         this->clients.push_back(std::move(client));
 
         //COW增量更新视图: 拷贝当前视图, 只修改新增客户端涉及的通道, 原子换新, 旧视图入GC
-        if (this->chViews)
+        if (auto* cur = this->chViews.load(std::memory_order_acquire))
         {
-            auto newView = std::make_shared<std::vector<_Channel>>(*this->chViews);
+            auto* newView = new _ChannelView(*cur);
             for (size_t k = 0; k < channels.size(); k++)
             {
                 int idx = this->channelViewIndex(channels[k], type);
@@ -241,8 +245,8 @@ _Client2* ASIODriver::registerClient(const std::vector<int>& channels, int type,
                     (*newView)[idx].wbs.push_back(raw->wbs[k].get());
                 }
             }
-            this->viewGC.push_back(this->chViews);
-            this->chViews = newView;
+            this->viewGC.push_back(cur);
+            this->chViews.store(newView, std::memory_order_release);
         }
     }
     if (this->hNotify != INVALID_HANDLE_VALUE)
@@ -272,9 +276,9 @@ void ASIODriver::removeClient(_Client2* client)
     this->clients.erase(it);
 
     //COW增量更新视图: 拷贝当前视图, 只移除被删客户端涉及的通道, 原子换新, 旧视图入GC
-    if (this->chViews)
+    if (auto* cur = this->chViews.load(std::memory_order_acquire))
     {
-        auto newView = std::make_shared<std::vector<_Channel>>(*this->chViews);
+        auto* newView = new _ChannelView(*cur);
         for (size_t k = 0; k < client->chs.size(); k++)
         {
             int idx = this->channelViewIndex(client->chs[k], client->type);
@@ -284,8 +288,8 @@ void ASIODriver::removeClient(_Client2* client)
                 wbs.erase(std::remove(wbs.begin(), wbs.end(), client->wbs[k].get()), wbs.end());
             }
         }
-        this->viewGC.push_back(this->chViews);
-        this->chViews = newView;
+        this->viewGC.push_back(cur);
+        this->chViews.store(newView, std::memory_order_release);
     }
 
     lk.unlock();
@@ -342,6 +346,10 @@ int ASIODriver::channelViewIndex(int channel, int type) const
  */
 void ASIODriver::cleanupGC()
 {
+    for (auto* v : this->viewGC)
+    {
+        delete v;
+    }
     this->viewGC.clear();
     this->gcClients.clear();
 }
@@ -382,12 +390,8 @@ void ASIODriver::processor()
             break;   //hNotify唤醒但已停止(可能同时置位了hExit)
         }
 
-        //2.1 原子抓取当前聚合视图引用(客户端增删已COW换新, 这里始终拿到有效视图)
-        std::shared_ptr<std::vector<_Channel>> view;
-        {
-            std::lock_guard<std::mutex> lk(this->mtx);
-            view = this->chViews;
-        }
+        //2.1 原子抓取当前聚合视图指针(客户端增删已COW换新, 无需持锁; 本轮结束前由viewGC持有旧视图, 不会悬垂)
+        _ChannelView* view = this->chViews.load(std::memory_order_acquire);
 
         //2.2 处理数据(不持锁)
         if (view)
@@ -431,18 +435,18 @@ void ASIODriver::processor()
 }
 
 /**
- * 重建通道聚合视图(COW快照):
+ * 构建聚合视图快照(返回新分配对象, 调用方负责交给原子指针或释放):
  * 视图顺序与 _cbBuffers 一致: 激活的输入通道在前, 输出通道在后
  * 每个通道关联所有订阅该通道的客户端缓冲
  */
-std::shared_ptr<std::vector<_Channel>> ASIODriver::buildView()
+_ChannelView* ASIODriver::buildView()
 {
     auto& dev = this->pAsioDevice;
     int iActive = dev->_iActiveNum;
     int oActive = dev->_oActiveNum;
     int total = dev->totalActiveNum;
 
-    auto view = std::make_shared<std::vector<_Channel>>(total);
+    auto* view = new _ChannelView(total);
     for (int i = 0; i < total; i++)
     {
         (*view)[i].channel = dev->_cbBuffers[i].channel;
@@ -484,7 +488,7 @@ std::shared_ptr<std::vector<_Channel>> ASIODriver::buildView()
  *       仅当 inBatches>0 且激活输入通道时读, 避免客户端增删唤醒时读到脏数据
  * 输出: 按回调已消费量(drained)补充混频, 与通知节奏解耦, 天然匹配任何唤醒时机
  */
-void ASIODriver::processData(const std::vector<_Channel>& view, int inBatches)
+void ASIODriver::processData(const _ChannelView& view, int inBatches)
 {
     auto& dev = this->pAsioDevice;
     int bitDepth = dev->bitDepth;
@@ -544,7 +548,7 @@ void ASIODriver::processData(const std::vector<_Channel>& view, int inBatches)
  * 2、精确门限: 只填充到 outputLimitFrames, 不覆盖已写入数据, 精确控制播放延迟
  * 3、float -> 设备采样格式字节后写入环形区(按缓冲区槽组织, 支持槽回绕)
  */
-int ASIODriver::mixOutput(const std::vector<_Channel>& view, int frames)
+int ASIODriver::mixOutput(const _ChannelView& view, int frames)
 {
     auto& dev = this->pAsioDevice;
     int iActive = dev->_iActiveNum;
@@ -648,7 +652,7 @@ int ASIODriver::mixOutput(const std::vector<_Channel>& view, int frames)
 }
 
 //播放数据预填(驱动启动前调用, 建立可控的起始播放延迟)
-void ASIODriver::prefillOutput(const std::vector<_Channel>& view)
+void ASIODriver::prefillOutput(const _ChannelView& view)
 {
     if (this->pAsioDevice->_oActiveNum > 0)
     {
@@ -766,8 +770,13 @@ STAType ASIODriver::start()
     this->lastRenderReadPos = 0;
     {
         std::lock_guard<std::mutex> lk(this->mtx);
-        this->chViews = this->buildView();
-        this->prefillOutput(*this->chViews);   //驱动启动前预填, 建立可控的起始播放延迟
+        auto* view = this->buildView();
+        auto* old = this->chViews.exchange(view, std::memory_order_acq_rel);   //重启时替换旧视图
+        if (old)
+        {
+            this->viewGC.push_back(old);
+        }
+        this->prefillOutput(*view);   //驱动启动前预填, 建立可控的起始播放延迟
     }
 
     //===== 启动引擎线程 =====

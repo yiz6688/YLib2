@@ -31,13 +31,16 @@ struct _Channel
     std::vector<WaveBuffer*> wbs; //订阅该通道的客户端缓冲(非拥有)
 };
 
+//聚合视图(COW快照)类型: 引擎原子抓取, 旧视图由 viewGC 显式持有并在本轮结束释放(无需引用计数)
+using _ChannelView = std::vector<_Channel>;
+
 
 //ASIO引擎类:
 // 1、底层驱动(ASIODevice)回调线程: 采集填充输入环形区 / 输出环形区取数, 达到通知门限后唤醒引擎
-// 2、引擎线程(processor): 条件变量等待, 收到通知后
+// 2、引擎线程(processor): 等待系统事件, 收到通知后
 //    从输入环形区拷贝采集数据到各录音客户端; 从各播放客户端对应通道混频数据到输出环形区
-// 3、客户端增删后触发通道聚合视图(COW快照)变化, 旧视图放入GC列表,
-//    引擎唤醒后先获取当前聚合视图引用, 处理结束后退出时释放GC列表
+// 3、客户端增删时COW增量更新视图(原子指针换新), 旧视图放入GC列表,
+//    引擎每轮原子抓取当前视图处理, 本轮结束后清理GC
 class ASIODriver
 {
 
@@ -74,18 +77,18 @@ public:
 private:
     //引擎线程
     void processor();
-    //重建通道聚合视图(COW快照, 用于启动时外部初始化)
-    std::shared_ptr<std::vector<_Channel>> buildView();
+    //构建聚合视图快照(用于启动时外部初始化, 返回新分配对象)
+    _ChannelView* buildView();
     //物理通道号 -> 视图索引(增删客户端COW时定位受影响的通道)
     int channelViewIndex(int channel, int type) const;
     //清理GC: 释放旧视图快照/已移除客户端缓冲(引擎每轮结束后调用, 未来可转发线程池)
     void cleanupGC();
     //处理数据: inBatches=输入整批数(0表示无可读输入), 输出按回调已消费量补充
-    void processData(const std::vector<_Channel>& view, int inBatches);
+    void processData(const _ChannelView& view, int inBatches);
     //从播放客户端混频写入输出环形区(精确门限, 不可覆盖), 返回实际写入帧数
-    int mixOutput(const std::vector<_Channel>& view, int frames);
+    int mixOutput(const _ChannelView& view, int frames);
     //播放数据预填(驱动启动前由start串行调用, 建立可控的起始延迟)
-    void prefillOutput(const std::vector<_Channel>& view);
+    void prefillOutput(const _ChannelView& view);
     //float -> 设备采样格式字节
     void mixToBytes(const float* src, char* dst, int frames);
 
@@ -163,10 +166,10 @@ public:
     //已移除客户端, 等待引擎每轮结束清理GC时释放(缓冲仍需存活, 保证旧视图引用不悬垂)
     std::vector<std::unique_ptr<_Client2>> gcClients;
 
-    //当前聚合视图快照(COW): 客户端增删时直接增量更新并原子换新, 旧视图入viewGC
-    std::shared_ptr<std::vector<_Channel>> chViews;
-    //旧视图GC列表, 引擎每轮结束清理
-    std::vector<std::shared_ptr<std::vector<_Channel>>> viewGC;
+    //当前聚合视图快照(COW): 原子指针, 客户端增删时增量更新并原子换新, 旧视图入viewGC
+    std::atomic<_ChannelView*> chViews{ nullptr };
+    //旧视图GC列表(拥有), 引擎每轮结束清理
+    std::vector<_ChannelView*> viewGC;
 
     //输入消费位置(计数单元=单次回调, 单调递增, 引擎线程独占)
     unsigned iReadPos = 0;
