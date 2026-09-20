@@ -47,9 +47,13 @@ public:
 
 	//virtual ~ASIOClient() = 0;
 
-	//virtual ICapture* getCaptureClient(std::initializer_list<int> lst) = 0;
+	TResult<ICapture*> getCapture(std::initializer_list<int> lst);
 
-	//virtual IRender* getRenderClient(std::initializer_list<int> lst) = 0;
+	TResult<IRender*> getRender(std::initializer_list<int> lst);
+
+	TResult<void> Initialize(unsigned inputMask, unsigned outputMask);
+
+	TResult<void> Release();
 
 
 	//获取录制通道信息

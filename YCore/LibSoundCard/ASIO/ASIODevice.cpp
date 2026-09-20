@@ -29,8 +29,11 @@ Asio驱动的具体实现
 using namespace std;
 
 
-static constexpr int notifyMills = 20;   //系统通知的间隔
-static constexpr int bufferMills = 100;  //不超过缓冲区
+// static constexpr int notifyMills = 20;   //系统通知的间隔
+// static constexpr int bufferMills = 100;  //不超过缓冲区
+
+constexpr int BUFFER_NOTIFY_MILLS = 20;   //系统通知的间隔
+constexpr int BUFFER_MAX_MILLS = 100;     //最大系统缓冲区
 
 
 static SampleType _getSampleType(ASIOSampleType asioType)
@@ -55,17 +58,6 @@ static SampleType _getSampleType(ASIOSampleType asioType)
 	{
 		return SampleType::UNKNOWN;
 	}
-}
-
-static ASIOChannel toChannel(ASIOChannelInfo info)
-{
-	ASIOChannel value;
-	value.channel = info.channel;
-	value.name = info.name;
-	value.sampleType = _getSampleType(info.type);
-	value.channelType = info.isInput;
-
-	return value;
 }
 
 
@@ -165,48 +157,11 @@ std::expected<void, std::string> ASIODevice::deviceInit()
 		}
 	}
 
-	result = this->getSampleRate();
+	result = this->getHaParam();
 	if (!result)
 	{
 		return result;
 	}
-	
-	//获取到缓冲区后。 后续根据延迟设置缓冲区
-	//获取缓冲区, granularity=-1 的话 缓冲区就是2的n次方
-	error = this->iasio->getBufferSize(&this->bufferMinSize, &this->bufferMaxSize,
-		&this->bufferPreferredSize, &this->bufferGranularity);
-	if (error != ASE_OK)
-	{
-		return std::unexpected(std::format("getBufferSize Fail, code: {}", error));
-	}
-	this->bufferSize = this->bufferPreferredSize;
-	//cout << "默认缓冲区: " << this->bufferSize << endl;
-
-	if (this->bufferSize < 512)
-	{
-		this->bufferSize = 512;
-	}
-
-
-	long notifySize = notifyMills * this->sampleRate / 1000; //乘以缓冲区
-	notifySize = NumUtils::nextpow2(notifySize);  //最接近的一个2的N次方
-	println("缓冲区1:{}", notifySize);
-	float xxx = notifySize * 1000 / this->sampleRate;
-	int k = bufferMills / xxx;
-	println("k数目:{}", k);
-	if (k < 2)
-	{
-		k = 2;
-	}
-
-	if (notifySize < this->bufferSize)
-	{
-		notifySize = this->bufferSize;
-		k = 2;
-	}
-	
-
-
 
 	//获取输入输出数量
 	error = this->iasio->getChannels(&this->num_of_capture, &this->num_of_render);
@@ -307,16 +262,100 @@ std::expected<void, std::string> ASIODevice::deviceRelease()
 }
 
 
+TResult<void> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask)
+{
+	if (this->inputMask == 0 && this->outputMask == 0)
+	{
+		//处理输入通道
+		if (this->num_of_capture == 0 && inputMask != 0)
+		{
+			return std::unexpected("inputChannel=0");
+		}
+
+		unsigned value = (1 << this->num_of_capture) - 1 ;
+		if (value < inputMask)
+		{
+			return std::unexpected("inputMask>inputChannel");
+		}
+
+		value &= inputMask;
+		if (value != inputMask)
+		{
+			return std::unexpected("inputMask invalid");
+		}
+		this->inputMask = inputMask;
+
+		//处理输出通道
+		if (this->num_of_render == 0 && outputMask != 0)
+		{
+			return std::unexpected("outputChannel=0");
+		}
+
+		value = (1 << this->num_of_render) - 1;
+		if (value < outputMask)
+		{
+			return std::unexpected("outputMask>outputChannel");
+		}
+
+		value &= outputMask;
+		if (value != outputMask)
+		{
+			return std::unexpected("outputMask invalid");
+		}
+		this->outputMask = outputMask;
+		return {};
+	}
+	else
+	{
+		return std::unexpected("channelMask has seted");
+	}
+}
+
 
 /**
 *驱动创建缓冲区
 */
 TResult<void> ASIODevice::createBuffer()
 {
+	
+	if(this->bufferReady)
+	{
+		return std::unexpected("bufferReady is true");
+	}
+
+
 	string errInfo = "";
 	bool bSuccess = false;
 	ASIOError error;
+	int offset = 0;
 	
+	auto result = this->getHaParam();
+	if(!result)
+	{
+		return result;
+	}
+
+	long notifyFrame = BUFFER_NOTIFY_MILLS * this->sampleRate / 1000; //乘以缓冲区
+	long maxDelayFrame = BUFFER_MAX_MILLS * this->sampleRate / 1000;  //最大延迟对应的帧
+	if(notifyFrame < this->bufferSize)
+	{
+		notifyFrame = this->bufferSize;
+	}
+
+	long delayFrame = notifyFrame * 2;
+	if(delayFrame < maxDelayFrame)
+	{
+		delayFrame = maxDelayFrame;
+	}
+
+	int n = (delayFrame + this->bufferSize - 1) / this->bufferSize;
+	n = NumUtils::nextpow2(n);  //2的幂次对齐
+
+	int byteSize = getByteWitdh(this->sampleType);
+	int size1 = n * this->bufferSize * byteSize;
+
+
+
 
 	//如果不设置通道掩码，就默认创建所有通道
 	if (this->inputMask == 0 && this->outputMask == 0)
@@ -329,28 +368,55 @@ TResult<void> ASIODevice::createBuffer()
 
 	auto inputs = BitConverter::getBitIndex(this->inputMask);
 	auto outputs = BitConverter::getBitIndex(this->outputMask);
+
+	this->_iActiveNum = inputs.size();  //输入通道总数
+	this->_oActiveNum = outputs.size(); //输出通道总数
+	this->totalActiveNum = this->_iActiveNum + this->_oActiveNum;  //总激活的通道数
+
+	int inputByteNums = size1 * this->_iActiveNum; //输入通道的字节数
+	int outputByteNums = size1 * this->_oActiveNum; //输出通道的字节数
+	this->_iTotalBuffers.resize(inputByteNums); //输入通道总字节数
+	this->_oTotalBuffers.resize(outputByteNums);//输出通道总字节数
+	this->_cbBuffers.reserve(this->totalActiveNum); //回调缓冲区
+	for(int i=0; i< this->_iActiveNum; i++)
+	{
+		offset = i;
+		int channel = inputs[offset];
+		char* buf = this->_iTotalBuffers.data() + i * size1;
+		this->_cbBuffers.emplace_back(channel, buf);
+	}
+
+	for(int i=0; i< this->_oActiveNum; i++)
+	{
+		offset = this->_iActiveNum + i;
+		int channel = outputs[offset];
+		char* buf = this->_oTotalBuffers.data() + i * size1;
+		this->_cbBuffers.emplace_back(channel, buf);
+	}
+
+
+
 	int inputSize = inputs.size();
 	int outputSize = outputs.size();
 
-	if (this->allocFlag == 0)
-	{
-		this->inputRing.reserve(inputSize);
-		this->outputRing.reserve(outputSize);
-		int byteSize = this->ringBufferSize * this->bitDepth;
-		for (int i = 0; i < inputSize; i++)
-		{
-			ASIOBuffer buf(inputs[i], this->sampleType, this->bufferSize, this->ringBufferSize);
-			this->inputRing.push_back(std::move(buf));
-		}
 
-		for (int i = 0; i < outputSize; i++)
-		{
-			ASIOBuffer buf(outputs[i], this->sampleType, this->bufferSize, this->ringBufferSize);
-			this->outputRing.push_back(std::move(buf));
-		}
-		this->allocFlag = 1;
+	auto notifyBufferSize = BUFFER_NOTIFY_MILLS * this->sampleRate / 1000; //乘以缓冲区
+	notifyBufferSize = NumUtils::nextpow2(notifyBufferSize);  //最接近的一个2的N次方
+	println("通知缓冲区1:{}", notifyBufferSize);
+
+	if (notifyBufferSize < this->bufferSize)
+	{
+		notifyBufferSize = bufferSize;
 	}
 
+	auto notifyMills = notifyBufferSize * 1000 / sampleRate;
+	int num = BUFFER_MAX_MILLS / notifyMills;
+	auto maxBufferSize = num * notifyBufferSize;
+	if (num < 2)
+	{
+		maxBufferSize *= 2;
+	}
+	println("系统缓冲区:{}, 通知缓冲区:{}, 最大缓冲区:{}", bufferSize, notifyBufferSize, maxBufferSize);
 
 	auto totalChannel = inputSize + outputSize;
 
@@ -358,7 +424,6 @@ TResult<void> ASIODevice::createBuffer()
 	bufferInfos.resize(totalChannel);
 
 
-	int offset = 0;
 	for (int i = 0; i < inputSize; i++)
 	{
 		offset = i;
@@ -394,8 +459,8 @@ TResult<void> ASIODevice::createBuffer()
 		offset = i;
 		ASIOBufferInfo& bufferInfo = bufferInfos[offset];
 		//this->inputBuffers.push_back(bufferInfo);
-		this->inputRing[i].buffers[0] = bufferInfo.buffers[0];
-		this->inputRing[i].buffers[1] = bufferInfo.buffers[1];
+		this->_cbBuffers[offset].buffers[0] = bufferInfo.buffers[0];
+		this->_cbBuffers[offset].buffers[1] = bufferInfo.buffers[1];
 	}
 	
 
@@ -404,8 +469,8 @@ TResult<void> ASIODevice::createBuffer()
 		offset = i + inputSize;
 		ASIOBufferInfo& bufferInfo = bufferInfos[offset];
 		//this->outputBuffers.push_back(bufferInfo);
-		this->outputRing[i].buffers[0] = bufferInfo.buffers[0];
-		this->outputRing[i].buffers[1] = bufferInfo.buffers[1];
+		this->_cbBuffers[offset].buffers[0] = bufferInfo.buffers[0];
+		this->_cbBuffers[offset].buffers[1] = bufferInfo.buffers[1];
 	}
 
 
@@ -456,55 +521,6 @@ std::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
 	result = this->createBuffer();
 	
 	return {};
-}
-
-TResult<void> ASIODevice::setChannelMask(unsigned inputMask, unsigned outputMask)
-{
-	if (this->inputMask == 0 && this->outputMask == 0)
-	{
-		//处理输入通道
-		if (this->num_of_capture == 0 && inputMask != 0)
-		{
-			return std::unexpected("inputChannel=0");
-		}
-
-		unsigned value = (1 << this->num_of_capture) - 1 ;
-		if (value < inputMask)
-		{
-			return std::unexpected("inputMask>inputChannel");
-		}
-
-		value &= inputMask;
-		if (value != inputMask)
-		{
-			return std::unexpected("inputMask invalid");
-		}
-		this->inputMask = inputMask;
-
-		//处理输出通道
-		if (this->num_of_render == 0 && outputMask != 0)
-		{
-			return std::unexpected("outputChannel=0");
-		}
-
-		value = (1 << this->num_of_render) - 1;
-		if (value < outputMask)
-		{
-			return std::unexpected("outputMask>outputChannel");
-		}
-
-		value &= outputMask;
-		if (value != outputMask)
-		{
-			return std::unexpected("outputMask invalid");
-		}
-		this->outputMask = outputMask;
-		return {};
-	}
-	else
-	{
-		return std::unexpected("channelMask has seted");
-	}
 }
 
 TResult<void> ASIODevice::getSampleRate()
@@ -608,17 +624,38 @@ TResult<void> ASIODevice::stop()
 	return {};
 }
 
-
-void ASIODevice::bufferProcess(int bufferIndex, ASIOBool directProcess)
+TResult<void> ASIODevice::getHaParam()
 {
-	for (auto& buffer : this->inputRing)
+	
+	//获取到缓冲区后。 后续根据延迟设置缓冲区
+	//获取缓冲区, granularity=-1 的话 缓冲区就是2的n次方
+	auto error = this->iasio->getBufferSize(&this->bufferMinSize, &this->bufferMaxSize,
+		&this->bufferPreferredSize, &this->bufferGranularity);
+	if (error != ASE_OK)
 	{
-		buffer.inputProcess(bufferIndex);
+		return std::unexpected(std::format("getBufferSize Fail, code: {}", error));
 	}
+	this->bufferSize = this->bufferPreferredSize;
+	//cout << "默认缓冲区: " << this->bufferSize << endl;
 
-	for (auto& buffer : this->outputRing)
+	auto result = this->getSampleRate();
+	if (!result)
 	{
-		buffer.outputProcess(bufferIndex);
+		return result;
 	}
+    return TResult<void>();
 }
+
+// void ASIODevice::bufferProcess(int bufferIndex, ASIOBool directProcess)
+// {
+// 	for (auto& buffer : this->inputRing)
+// 	{
+// 		buffer.inputProcess(bufferIndex);
+// 	}
+
+// 	for (auto& buffer : this->outputRing)
+// 	{
+// 		buffer.outputProcess(bufferIndex);
+// 	}
+// }
 

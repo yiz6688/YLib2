@@ -1,6 +1,5 @@
 #include"ASIOClient.h"
-
-
+#include"BitConverter.h"
 #include"ASIODriver.h"
 
 TResult<void> ASIOClient::init(CLSID clsid)
@@ -47,4 +46,24 @@ TResult<int> ASIOClient::getSampleRate()
 TResult<void> ASIOClient::setSampleRate(long sampleRate)
 {
     return this->pDriver->setSampleRate(sampleRate);
+}
+
+TResult<ICapture *> ASIOClient::getCapture(std::initializer_list<int> lst)
+{
+    return this->pDriver->createCapture(BitConverter::setBitIndex(lst));
+}
+
+TResult<IRender *> ASIOClient::getRender(std::initializer_list<int> lst)
+{
+    return this->pDriver->createRender(BitConverter::setBitIndex(lst));
+}
+
+TResult<void> ASIOClient::Initialize(unsigned inputMask, unsigned outputMask)
+{
+    return TResult<void>();
+}
+
+TResult<void> ASIOClient::Release()
+{
+    return TResult<void>();
 }

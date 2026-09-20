@@ -3,6 +3,7 @@
 #include<ranges>
 #include<array>
 #include<print>
+#include"NumUtils.h"
 
 using namespace std;
 
@@ -11,18 +12,6 @@ constexpr unsigned MAX_DRIVER_NUM = 2;  //最大支持的驱动数量
 constexpr int BUFFER_NOTIFY_MILLS = 20;   //系统通知的间隔
 constexpr int BUFFER_MAX_MILLS = 100;     //最大系统缓冲区
 
-
-
-static int nextpow2(int num)
-{
-	int result = 0x1;
-	num -= 1;
-	do
-	{
-		result <<= 1;
-	} while (num >>= 1);
-	return result;
-}
 
 
 struct ASIOEntity
@@ -174,6 +163,13 @@ constexpr int maxDelayMills = 50;
 constexpr int minDelayMills = 40;
 
 
+
+
+
+
+
+
+
 ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid)
 	:asioID(clsid)
 {
@@ -202,9 +198,15 @@ ASIODriver::~ASIODriver()
 {
 	this->processFlag = false;
 	this->cv.notify_one();
-	if (this->fu.valid())
+	// if (this->fu.valid())
+	// {
+	// 	this->fu.get();
+	// }
+	if(this->hThread != INVALID_HANDLE_VALUE)
 	{
-		this->fu.get();
+		WaitForSingleObject(this->hThread, INFINITE);
+		CloseHandle(this->hThread);
+		this->hThread = INVALID_HANDLE_VALUE;
 	}
 
 
@@ -255,29 +257,29 @@ std::expected<ASIORender*, std::string>ASIODriver::createRender(int channelMask)
 	}
 
 
-	std::unique_ptr<ASIORender> pRender = std::make_unique<ASIORender>(this, channelMask);
+	ASIORender* pRender = new ASIORender(this, channelMask);
 
 	auto& vec = pRender->_channels;
 	for (auto v : vec)
 	{
-		for (auto& buf : this->pAsioDevice->outputRing)
-		{
-			if (v == buf.channel)
-			{
-				WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
-				pRender->_buffers.push_back(std::move(waveRing));
-			}
-		}
+		// for (auto& buf : this->pAsioDevice->outputRing)
+		// {
+		// 	if (v == buf.channel)
+		// 	{
+		// 		WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
+		// 		pRender->_buffers.push_back(std::move(waveRing));
+		// 	}
+		// }
 	}
 
 	{
 		lock_guard<mutex> lg(this->mtx);
-		this->renderLsts.push_back(std::move(pRender));
+		this->renderLsts.push_back(pRender);
 	}
 
 
 
-	return pRender.get();
+	return pRender;
 }
 
 std::expected<ASIOCapture*, std::string>ASIODriver::createCapture(int channelMask)
@@ -294,30 +296,60 @@ std::expected<ASIOCapture*, std::string>ASIODriver::createCapture(int channelMas
 	}
 
 
-	std::unique_ptr<ASIOCapture> pCapture = std::make_unique<ASIOCapture>(this, channelMask);
+	ASIOCapture* pCapture = new ASIOCapture(this, channelMask);
 
 	auto& vec = pCapture->_channels;
 	for (auto v : vec)
 	{
-		for (auto& buf : this->pAsioDevice->outputRing)
-		{
-			if (v == buf.channel)
-			{
-				WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
-				pCapture->_buffers.push_back(std::move(waveRing));
-			}
-		}
+		// for (auto& buf : this->pAsioDevice->outputRing)
+		// {
+		// 	if (v == buf.channel)
+		// 	{
+		// 		WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
+		// 		pCapture->_buffers.push_back(std::move(waveRing));
+		// 	}
+		// }
 	}
 
 	{
 		lock_guard<mutex> lg(this->mtx);
-		this->captureLsts.push_back(std::move(pCapture));
+		_Client2  cccc;
+		//this->captureLsts.push_back(pCapture);
+		std::vector<_Client2*> temp = this->clients;  //先拷贝一份
+		temp.push_back(nullptr);
+
+		
+
+
+		//同步刷新单通道的列表，也用COW模式
+
+		//自旋锁
+		this->clients.swap(temp); //交换对象
+	
 	}
 
 
-	return pCapture.get();
+	
+
+
+
+	return pCapture;
 }
 
+void ASIODriver::removeClient(_Client2 *client)
+{
+	{
+		lock_guard<mutex> lg(this->mtx);
+		//this->captureLsts.push_back(pCapture);
+		std::vector<_Client2*> temp = this->clients;  //先拷贝一份
+		temp.push_back(nullptr);
+		//自旋锁
+		this->clients.swap(temp); //交换对象
+	
+	}
+
+	//释放移除的对象。
+}
 
 /**
 * 1、能够按照缓冲时间来，就无限期等待，等待驱动通知
@@ -328,49 +360,88 @@ void ASIODriver::processor()
 {
 
 	auto& pDevice = this->pAsioDevice;
-	auto& inputRing = pDevice->inputRing;
-	auto& outputRing = pDevice->outputRing;
-	int inputSize = inputRing.size();
-	int outputSize = outputRing.size();
+	auto deviceByteSize = pDevice->deviceByteSize;
+	auto deviceFrameSize = pDevice->bufferSize;
 
 	int notifyByteSize = this->notifyBufferSize * pDevice->bitDepth; //缓冲区字节数
-	std::vector<std::unique_ptr<char[]>> inputTemp;
-	std::vector<std::unique_ptr<char[]>> outputTemp;
 
-	for (int i = 0; i < inputSize; i++)
-	{
-		inputTemp.emplace_back(new char[notifyByteSize]);
+	float* temp = new float[notifyBufferSize];
 
-		this->waveInputBuffers.emplace_back(new WaveRingBuffer(pDevice->sampleType, this->maxBufferSize));
-		this->waveInputBuffers.emplace_back(new WaveRingBuffer(pDevice->sampleType, this->maxBufferSize));
-	}
+	int offset =  0;
+	int _iActiveNum = this->pAsioDevice->_iActiveNum;
+	int _oActiveNum = this->pAsioDevice->_oActiveNum;
+	int totalActiveNum = this->pAsioDevice->totalActiveNum;
 
-	for (int i = 0; i < outputSize; i++)
-	{
-		outputTemp.emplace_back(new char[notifyByteSize]);
-		this->waveOutputBuffers.emplace_back(new WaveRingBuffer(pDevice->sampleType, this->maxBufferSize));
-		this->waveOutputBuffers.emplace_back(new WaveRingBuffer(pDevice->sampleType, this->maxBufferSize));
-	}
+	auto& buffers = this->pAsioDevice->_cbBuffers;
+	
+	float* mixBuffer = nullptr;
 
-	float* fxx = new float[notifyBufferSize];
-
-
-
-	println("监听线程启动:{}, input={}, output={}", this->processFlag, inputRing.size(), outputRing.size());
 	int n = 0;
 	while (this->processFlag)
 	{
 		std::unique_lock lk(this->mtx);
 		this->cv.wait(lk);//在这里等待回调的通知。
 
-		auto bufferSize = this->_bufferCounter.load(memory_order_acquire);
+		auto frameSize = this->_validFrameNum.load(memory_order_acquire);
 
-		while (bufferSize > this->deviceBufferSize)
+		while (frameSize > deviceFrameSize)
 		{
 
-			bufferSize = this->_bufferCounter.fetch_sub(this->deviceBufferSize, memory_order_acq_rel); //减去空间，循环执行。
+			frameSize = this->_validFrameNum.fetch_sub(deviceFrameSize, memory_order_acq_rel); //减去空间，循环执行。
 		
-		
+			auto capCounter = pDevice->_captureCounter.load(memory_order_acquire);
+			auto wpos1 = capCounter & (this->pAsioDevice->_haBuffersize - 1); //写位置。
+
+			//处理输入通道
+			for(int i=0; i<_iActiveNum; i++)
+			{
+				offset = i;
+				auto& chView = this->chViews[offset];
+				if(chView.wbs.empty())
+				{
+					continue;
+				}
+				
+				auto& input = buffers[offset];
+				auto src = input._buf + wpos1;  //读取的原始位置
+				for(auto& wb : chView.wbs)
+				{
+					wb->writeBytes(src, deviceByteSize);
+				}
+
+			}
+
+			//处理输出通道
+			auto wpos2 = pDevice->_renderReadPos.load(memory_order_acquire);
+			for(int i=0; i<_oActiveNum; i++)
+			{
+				offset = i + _iActiveNum;
+				auto& chView = this->chViews[offset];
+				auto size = chView.wbs.size();
+				if(size == 0)
+				{
+					//对应内存写0
+				}else
+				{
+					//如果类型一致就直接拷贝，不走后面的转换了。不然就走转换
+
+					//--
+					auto& wb = chView.wbs[0];
+					wb->readFloat(mixBuffer, 1024);  //先把第一个通道的内容读出来。
+					//如果数据不够就给mixBuffer补0 
+					for(int k = 1; k<size; k++)
+					{
+						auto& wb2 = chView.wbs[k];
+						wb2->readFloat(temp, 1024);
+						
+						for(int m = 0; m< 1024; m++)
+						{
+							mixBuffer[m]+=temp[m];
+						}
+					}
+					//转码后写入对应缓冲区
+				}
+			}
 		
 		
 		
@@ -392,54 +463,18 @@ void ASIODriver::processor()
 
 		Stopwatch sw1;
 		sw1.Start();
-		for (int i=0; i< inputSize; i++)
-		{
-			auto& ptr1 = inputTemp[i];
-			auto& buf = inputRing[i];
-			int size = buf.pRingBuffer->read(ptr1.get(), notifyByteSize);
-			if (i == 0)
-			{
-				println("缓冲区余量:{},  读到的:{} ", buf.pRingBuffer->getReadableBytes(), size);
-			}
-		}
-
-		for (int i = 0; i < outputSize; i++)
-		{
-			auto& ptr1 = outputTemp[i];
-			auto& buf = outputRing[i];
-			int size = buf.pRingBuffer->write(ptr1.get(), notifyByteSize);
-			if (i == 0)
-			{
-				println("缓冲区可写:{},  写入的:{} ", buf.pRingBuffer->getWriteableBytes(), size);
-			}
-		}
-		
-
-		
-		for (int i = 0; i < inputSize; i++)
-		{
-			auto& ptr1 = inputTemp[i];
-			auto* buf1 = this->waveInputBuffers[i * 2];
-			auto* buf2 = this->waveInputBuffers[i * 2 + 1];
-			buf1->writeBytes(ptr1.get(), notifyByteSize);
-			buf2->writeBytes(ptr1.get(), notifyByteSize);
-		}
-
-		for (int i = 0; i < outputSize; i++)
-		{
-			auto& ptr1 = outputTemp[i];
-			auto* buf1 = this->waveOutputBuffers[i * 2];
-			auto* buf2 = this->waveOutputBuffers[i * 2 + 1];
-			//buf1->readBytes(ptr1.get(), notifyByteSize);
-			//buf2->readBytes(ptr1.get(), notifyByteSize);
-			buf1->writeFloat(fxx, notifyBufferSize);
-			buf2->writeFloat(fxx, notifyBufferSize);
-		}
 
 		println("拷贝耗时: {}", sw1.ElapsedMillis());
 	}
 
 	println("监听线程退出:{}", this->processFlag);
+
+
+
+
+	//在这里做增删改查
+
+
 
 
 }
@@ -448,20 +483,56 @@ void ASIODriver::processor()
 
 void ASIODriver::bufferProcess(long doubleBufferIndex, ASIOBool directProcess)
 {
-	//
 
-	this->pAsioDevice->bufferProcess(doubleBufferIndex, directProcess);
+	auto& pDevice = this->pAsioDevice;
+	auto deviceByteSize = pDevice->deviceByteSize;  //缓冲区字节数
+	auto deviceFrameSize = pDevice->bufferSize;
+
+	int offset = 0;
+	int haSize = 0;  //缓冲区的通知总大小
+	int _iActiveNum = this->pAsioDevice->_iActiveNum; //激活的输入通道数
+	int _oActiveNum = this->pAsioDevice->_oActiveNum; //激活的输出通道数
+	int _totalNum = this->pAsioDevice->totalActiveNum;  //总激活的通道数
+
+	auto& buffers = this->pAsioDevice->_cbBuffers;  //回调缓冲区
+
+	int captureCounter = this->pAsioDevice->_captureCounter.load(memory_order_acquire);  //输入缓冲区计数器
+	int _wpos = captureCounter & (haSize - 1); //写位置。
+	for(int i=0; i< _iActiveNum; i++)
+	{
+		auto& input = buffers[i];
+
+		void* buffer = input.buffers[doubleBufferIndex];  
+        char* ptr = static_cast<char*>(buffer);   //硬件的缓冲区
+        auto dest = input._buf + _wpos;
+		memcpy(dest, ptr, 1024); //直接拷贝对应数量，这里是帧对齐的，不用计算容量了。
+	}
+	this->pAsioDevice->_captureCounter.fetch_add(1024, memory_order_release);
+
+	auto rpos = this->pAsioDevice->_renderReadPos.load(memory_order_acquire);  //输出读位置
+	//for (auto& output : outputs)
+	for(int i=0; i< _oActiveNum; i++)
+	{
+		offset = _iActiveNum + i;
+		auto& output = buffers[offset];
+		auto* buffer = output.buffers[doubleBufferIndex];
+        char* dest = static_cast<char*>(buffer);
+        std::fill_n(dest, deviceByteSize, 0); //清空缓冲区
+        auto src = output._buf + rpos;
+		memcpy(dest, src, 1024);  //读取对应的数据，引擎保证数据是有效的
+	}
+	this->pAsioDevice->_captureCounter.fetch_add(deviceFrameSize, memory_order_acq_rel);  //增加计数器
 
 
 
-	auto bufferCounter = this->_bufferCounter.fetch_add(this->deviceBufferSize, memory_order_acq_rel);
+	auto bufferCounter = this->_validFrameNum.fetch_add(deviceFrameSize, memory_order_acq_rel);
 	
 	if (bufferCounter == 0)
 	{
 		this->sw.Start();
 	}
 
-	bufferCounter += this->deviceBufferSize;
+	bufferCounter += deviceFrameSize;
 
 	if (bufferCounter == this->notifyBufferSize )
 	{
@@ -487,29 +558,7 @@ STAType ASIODriver::driverOpen()
 	}
 
 	auto sampleRate = this->pAsioDevice->sampleRate;
-	this->deviceBufferSize = this->pAsioDevice->bufferSize;   //采样点数
-	this->deviceByteSize = this->deviceBufferSize * this->pAsioDevice->bitDepth; //采样字节数
 
-
-	this->notifyBufferSize = BUFFER_NOTIFY_MILLS * sampleRate / 1000; //乘以缓冲区
-	this->notifyBufferSize = nextpow2(this->notifyBufferSize);  //最接近的一个2的N次方
-	println("通知缓冲区1:{}", this->notifyBufferSize);
-
-	if (this->notifyBufferSize < this->deviceBufferSize)
-	{
-		this->notifyBufferSize = this->deviceBufferSize;
-	}
-
-	long notifyMills = this->notifyBufferSize * 1000 / sampleRate;
-	int num = BUFFER_MAX_MILLS / notifyMills;
-	this->maxBufferSize = num * this->notifyBufferSize;
-	if (num < 2)
-	{
-		maxBufferSize *= 2;
-	}
-	println("系统缓冲区:{}, 通知缓冲区:{}, 最大缓冲区:{}", this->deviceBufferSize, this->notifyBufferSize, this->maxBufferSize);
-
-	this->pAsioDevice->ringBufferSize = this->maxBufferSize;
 
 	return {};
 }
@@ -537,11 +586,11 @@ STAType ASIODriver::start()
 		return result;
 	}
 
-	if (this->fu.valid() == false)
-	{
-		this->processFlag = true;
-		this->fu = std::async(std::launch::async, &ASIODriver::processor, this);
-	}
+	// if (this->fu.valid() == false)
+	// {
+	// 	this->processFlag = true;
+	// 	this->fu = std::async(std::launch::async, &ASIODriver::processor, this);
+	// }
 
 	return STAType();
 }
@@ -614,6 +663,34 @@ std::string ASIODriver::getRenderName(int channel)
 	}
 
 	return this->pAsioDevice->outputChannels[channel].name;	
+}
+
+TResult<void> ASIODriver::Initialize(unsigned inputMask, unsigned outputMask)
+{
+	auto result = this->pAsioDevice->setChannelMask(inputMask, outputMask);
+	if(!result)
+	{
+		return result;
+	}
+	result = this->createBuffer();
+
+
+	// if(this->hThread == INVALID_HANDLE_VALUE)
+	// {
+	// 	auto threadHandle = _beginthreadex(nullptr, 0, &ASIODriver::threadProc, this, 0, nullptr);
+	// 	if(threadHandle == 0)
+	// 	{
+	// 		return std::unexpected("Failed to create thread");
+	// 	}
+	// 	this->hThread = reinterpret_cast<HANDLE>(threadHandle);
+	// }
+
+    return result;
+}
+
+TResult<void> ASIODriver::Release()
+{
+    return TResult<void>();
 }
 
 std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid)

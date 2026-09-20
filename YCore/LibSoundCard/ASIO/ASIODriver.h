@@ -6,14 +6,54 @@
 #include<vector>
 #include"ASIOCapture.h"
 #include"ASIORender.h"
-#include"ASIOBuffer.h"
 #include"AsioDevice.h"
 #include<memory>
 #include<expected>
-#include"ASIOBuffer.h"
 #include"../../StopWatch.h"
 
 struct ASIOCallbacks;
+
+
+
+
+//聚合每一个具体通道的内容
+struct _Client
+{
+public:
+	std::vector<char> buffers;  //总空间
+	std::vector<WaveBuffer*> wbs;
+	int channel;
+	int type;  //输入or输出
+
+};
+
+
+//每一个具体对象的内容，包含各个通道
+struct _Client2
+{
+
+
+public:
+	std::vector<char> buffers;     //合并的整块缓冲区
+	std::vector<WaveBuffer*> wbs;  //区分的不同音频缓冲
+	std::vector<int> chs;         //对应的通道
+
+	int type; //输入或输出
+};
+
+
+
+//ASIO通道的类
+struct _Channel
+{
+
+	int channel;
+	int type;  //输入or输出
+	std::vector<WaveBuffer*> wbs;  //区分的不同音频缓冲
+	//硬件乒乓缓冲区。
+};
+
+
 
 class ASIODriver
 {
@@ -34,6 +74,7 @@ public:
 	//获取录音客户端
 	std::expected<ASIOCapture*, std::string> createCapture(int channelMask);
 
+	void removeClient(_Client2* client);
 
 private:
 	void processor();
@@ -76,8 +117,17 @@ public:
 
 	std::string getRenderName(int channel);
 
+	TResult<void> Initialize(unsigned inputMask, unsigned outputMask);
 
+	TResult<void> Release();
 
+private:
+	static unsigned __stdcall threadProc(void* param)
+	{
+		ASIODriver* driver = reinterpret_cast<ASIODriver*>(param);
+		driver->processor();
+		return 0;
+	}
 
 public:
 
@@ -114,26 +164,24 @@ public:
 	//单线程调度器
 	STAWorker staWorker;
 	//录音列表
-	std::vector<std::unique_ptr<ASIOCapture>> captureLsts;
+	std::vector<ASIOCapture*> captureLsts;
 	//播放列表
-	std::vector<std::unique_ptr<ASIORender>> renderLsts;
+	std::vector<ASIORender*> renderLsts;
 
-
-	std::vector<WaveRingBuffer*> waveInputBuffers;
-	std::vector<WaveRingBuffer*> waveOutputBuffers;
 
 	//需要一个临时缓冲区，用来存储数据，是否需要对等
 
 	//输入 输出缓存的缓冲区
 	
-	std::vector<RingBuffer> _inputBuffers;
-	std::vector<RingBuffer> _outputBuffers;
+	//std::vector<RingBuffer> _inputBuffers;
+	//std::vector<RingBuffer> _outputBuffers;
 
 	Stopwatch sw;
 
 	int processFlag = false;
 
-	std::future<void> fu;
+	//std::future<void> fu;
+	HANDLE hThread = INVALID_HANDLE_VALUE;
 
 private:
 	//通知缓冲区大小
@@ -143,10 +191,30 @@ private:
 	//缓冲区计数
 	//int bufferCounter = 0;
 
-	std::atomic<int> _bufferCounter = 0;
-	//设备缓冲区,采样点数
-	int deviceBufferSize = 0;
-	//设备缓冲区，字节数
-	int deviceByteSize = 0;
+	//可用帧数
+	std::atomic<int> _validFrameNum = 0;
+
+
+
+	std::vector<_Client*>  chClient; //通道客户端，完全体的客户端
+
+	std::vector<_Client*> clientQueue;  //缓冲区通道队列， 增/删的都在这里面。 由引擎线程处理。
+
+	std::vector<_Client2*> iClient_2;
+	std::vector<_Client2*> oClient_2;
+
+	
+	std::vector<_Client2*> clients; //客户端列表
+
+	std::vector<_Client2*> addLst;   //增加列表
+	std::vector<_Client2*> removeLst;  //删除列表
+
+
+	std::vector<char> _iCache;  //输入通道的缓存
+	std::vector<char> _oCache;  //输出通道的缓存
+
+	std::vector<_Channel> _iWbs;  //输入通道的缓存
+
+	std::vector<_Channel> chViews;  //通道视图
 
 };

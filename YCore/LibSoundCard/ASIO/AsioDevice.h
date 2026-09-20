@@ -12,9 +12,9 @@
 #include<initializer_list>
 #include"./asiosdk/asio.h"
 #include<expected>
-#include"ASIOChannel.h"
-#include"ASIOBuffer.h"
 #include"TResult.h"
+#include"WaveFormat.h"
+#include<span>
 
 using std::initializer_list;
 
@@ -22,6 +22,37 @@ using std::initializer_list;
 
 struct IASIO;
 class ASIOObject;
+
+
+
+struct ASIOBuffer2
+{
+ 
+public:
+    ASIOBuffer2(int _channel, char* buf)
+        :channel{_channel}
+    {
+       this->_buf = buf; 
+    }
+
+
+
+
+	std::span<char> getBuffer(int bufferIndex)
+    {
+        return std::span<char>(_buf, 100);
+    }
+
+    //通道号
+    int channel;
+
+    char* _buf;
+
+    void* buffers[2] {nullptr, nullptr};
+};
+
+
+
 
 class ASIODevice
 {
@@ -77,13 +108,7 @@ public:
 
 	std::expected<void, std::string> stop();
 
-	//底层驱动是否存活，通过读采样率判定
-	//bool aliveing();
-
-	//统计运行中的设备数量
-	int get_running_device();
-
-	
+	TResult<void> getHaParam();
 
 
 public:
@@ -141,8 +166,6 @@ public:
 	SampleType sampleType;
 	//采样位深
 	int bitDepth;
-	//环形缓冲区size，采样点数
-	int ringBufferSize;
 
 public:
 	//输入通道信息
@@ -150,45 +173,45 @@ public:
 	//输出通道信息
 	std::vector<ASIOChannelInfo> outputChannels;
 
-
-	//选择的输入缓冲区
-	//std::vector<ASIOBufferInfo> inputBuffers;
-	//选择的输出缓冲区
-	//std::vector<ASIOBufferInfo> outputBuffers;
-
-	int inputMask = 0;
-	int outputMask = 0;
-
-	std::vector<ASIOBuffer> inputRing;
-	std::vector<ASIOBuffer> outputRing;
-
-	int allocFlag = 0;
-
 private:
 	ASIOObject* object;
 	ASIOCallbacks* callbacks;
 
-
 public:
 
-
-
-
-	//ASIOChannel* getCapture(int channel);
-	//
-	//ASIOChannel* getRender(int channel);
-
-
-	//ASIOChannel* captures;
-
-	//ASIOChannel* renders;
-
-
-public:
-
-	void bufferProcess(int bufferIndex, ASIOBool directProcess);
+	//void bufferProcess(int bufferIndex, ASIOBool directProcess);
 
 	CLSID driverID;
+
+	int deviceByteSize;    //设备的缓冲区字节数
+	int deviceFrameSize;    //设备的帧数
+	int perBufferByteSize;  //单次的硬件缓冲字节数
+	int perChBufferByteSize; //每个硬件通道的字节数
+	int perChLimitByteSize;   //每个通道允许放置的数据量。
+
+
+	int _iActiveNum;  //激活的输入通道数
+ 	int _oActiveNum; //激活的输出通道数
+	int totalActiveNum;  //总激活的通道
+
+	int inputMask = 0; //输入通道的掩码
+	int outputMask = 0; //输出通道的掩码
+
+
+
+	std::vector<char> _iTotalBuffers; //总输入缓冲区
+	std::vector<char> _oTotalBuffers; //总输出缓冲区
+
+
+	std::vector<ASIOBuffer2> _cbBuffers; //回调缓冲区
+
+
+	std::atomic<unsigned> _captureCounter; //输入缓冲区计数器
+
+	std::atomic<unsigned> _renderWritePos; //输入写位置
+	std::atomic<unsigned> _renderReadPos;  //输出读位置
+
+	int _haBuffersize; //硬件缓冲区大小
 
 };
 
