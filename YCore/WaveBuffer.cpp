@@ -1,10 +1,11 @@
-﻿#include "WaveBuffer.h"
+#include "WaveBuffer.h"
 #include<limits>
 #include<stdexcept>
 #include<bit>
 #include<cmath>
 #include<algorithm>
 #include<cstring>
+#include"SampleConv.h"
 
 WaveBuffer::WaveBuffer(SampleType type, int sampleLen, int channelNum)
     :_type{type}, _chnNum{ channelNum}
@@ -40,6 +41,10 @@ WaveBuffer::WaveBuffer(SampleType type, int sampleLen, int channelNum)
     unsigned frameCount = std::bit_ceil(static_cast<unsigned>(sampleLen) + 1);
     this->_pRing = std::make_unique<ByteRing>(frameCount, static_cast<unsigned>(this->_frameSize));
     this->_pRing->setLimit(static_cast<unsigned>(sampleLen)); //门限: 有效可用空间恰好 sampleLen 帧
+
+    //整型/字节流转换临时缓冲: 按帧容量分配(源/目标均按最大8字节/采样, 兼容3字节int24等)
+    this->_convSrc.resize((size_t)sampleLen * 8);
+    this->_convDst.resize((size_t)sampleLen * 8);
 }
 
 WaveBuffer::~WaveBuffer()
@@ -751,495 +756,278 @@ int WaveBuffer::getCapacity()
     return static_cast<int>(this->_pRing->getMaxFrames() * this->_chnNum);
 }
 
+
 //=============================================================================
-// 内部格式 <-> 目标整型 逐通道转换
+// 内部格式 <-> 目标整型/字节流 逐通道转换(复用SampleConv)
+// 流程: 去交织该通道到_convSrc(内部格式连续) -> SampleConv转换到_convDst -> 交织写回
 //=============================================================================
 
 void WaveBuffer::toInt16(char* src, short* dest, int nFrames, int chnIndex, int stride)
 {
-    src = src + chnIndex * this->_byteDepth;
+    char* s = src + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(this->_convSrc.data() + (size_t)i * this->_byteDepth, s + (size_t)i * this->_frameSize, this->_byteDepth);
+    }
+    short* c = reinterpret_cast<short*>(this->_convDst.data());
     switch (this->_type)
     {
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = 0;
-            std::memcpy(&v, src, 2);
-            *dest = v;
-            src += this->_frameSize;
-            dest += stride;
-        }
+        std::memcpy(c, this->_convSrc.data(), (size_t)nFrames * 2);
         break;
     case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;   //24位有符号 -> int16
-            *dest = static_cast<short>(v);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntBytesToInt<short>(this->_convSrc.data(), nFrames, c, 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = static_cast<short>(v >> 16);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntBytesToInt<short>(this->_convSrc.data(), nFrames, c, 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = static_cast<short>(std::round(std::clamp(v, -1.0f, 1.0f) * 32767.0f));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::FloatToInt(reinterpret_cast<const float*>(this->_convSrc.data()), nFrames, c);
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = 0;
-            std::memcpy(&v, src, 8);
-            *dest = static_cast<short>(std::round(std::clamp(v, -1.0, 1.0) * 32767.0));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::DoubleToInt(reinterpret_cast<const double*>(this->_convSrc.data()), nFrames, c);
         break;
     default:
         break;
+    }
+    for (int i = 0; i < nFrames; i++)
+    {
+        dest[(size_t)i * stride] = c[i];
     }
 }
 
 void WaveBuffer::fromInt16(short* src, char* dest, int nFrames, int chnIndex, int stride)
 {
-    dest = dest + chnIndex * this->_byteDepth;
+    short* c = reinterpret_cast<short*>(this->_convSrc.data());
+    for (int i = 0; i < nFrames; i++)
+    {
+        c[i] = src[(size_t)i * stride];
+    }
     switch (this->_type)
     {
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            std::memcpy(dest, src, 2);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        std::memcpy(this->_convDst.data(), this->_convSrc.data(), (size_t)nFrames * 2);
         break;
     case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = *src;
-            dest[0] = static_cast<char>(v & 0xFF);
-            dest[1] = static_cast<char>((v >> 8) & 0xFF);
-            dest[2] = static_cast<char>((v >> 16) & 0xFF);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToIntBytes<short>(c, nFrames, this->_convDst.data(), 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = static_cast<int>(*src) << 16;
-            std::memcpy(dest, &v, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToIntBytes<short>(c, nFrames, this->_convDst.data(), 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = static_cast<float>(*src) / 32768.0f;
-            std::memcpy(dest, &v, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToFloat(c, nFrames, reinterpret_cast<float*>(this->_convDst.data()));
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = static_cast<double>(*src) / 32768.0;
-            std::memcpy(dest, &v, 8);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToDouble(c, nFrames, reinterpret_cast<double*>(this->_convDst.data()));
         break;
     default:
         break;
+    }
+    char* d = dest + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(d + (size_t)i * this->_frameSize, this->_convDst.data() + (size_t)i * this->_byteDepth, this->_byteDepth);
     }
 }
 
 void WaveBuffer::toInt24(char* src, int* dest, int nFrames, int chnIndex, int stride)
 {
-    src = src + chnIndex * this->_byteDepth;
+    char* s = src + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(this->_convSrc.data() + (size_t)i * this->_byteDepth, s + (size_t)i * this->_frameSize, this->_byteDepth);
+    }
+    int* c = reinterpret_cast<int*>(this->_convDst.data());
     switch (this->_type)
     {
-    case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;   //24位有符号
-            *dest = v;
-            src += this->_frameSize;
-            dest += stride;
-        }
-        break;
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = 0;
-            std::memcpy(&v, src, 2);
-            *dest = static_cast<int>(v) << 8;
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntBytesToInt24C(this->_convSrc.data(), nFrames, c, 2);
+        break;
+    case SampleType::INT24:
+        SampleConv::IntBytesToInt24C(this->_convSrc.data(), nFrames, c, 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = v >> 8;
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntBytesToInt24C(this->_convSrc.data(), nFrames, c, 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = static_cast<int>(std::round(std::clamp(v, -1.0f, 1.0f) * 8388607.0f));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::FloatToInt24(reinterpret_cast<const float*>(this->_convSrc.data()), nFrames, c);
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = 0;
-            std::memcpy(&v, src, 8);
-            *dest = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 8388607.0));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::DoubleToInt24(reinterpret_cast<const double*>(this->_convSrc.data()), nFrames, c);
         break;
     default:
         break;
+    }
+    for (int i = 0; i < nFrames; i++)
+    {
+        dest[(size_t)i * stride] = c[i];
     }
 }
 
 void WaveBuffer::fromInt24(int* src, char* dest, int nFrames, int chnIndex, int stride)
 {
-    dest = dest + chnIndex * this->_byteDepth;
+    int* c = reinterpret_cast<int*>(this->_convSrc.data());
+    for (int i = 0; i < nFrames; i++)
+    {
+        c[i] = src[(size_t)i * stride];
+    }
     switch (this->_type)
     {
-    case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = *src;
-            dest[0] = static_cast<char>(v & 0xFF);
-            dest[1] = static_cast<char>((v >> 8) & 0xFF);
-            dest[2] = static_cast<char>((v >> 16) & 0xFF);
-            src += stride;
-            dest += this->_frameSize;
-        }
-        break;
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = static_cast<short>(*src >> 8);
-            std::memcpy(dest, &v, 2);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::Int24CToIntBytes(c, nFrames, this->_convDst.data(), 2);
+        break;
+    case SampleType::INT24:
+        SampleConv::Int24CToIntBytes(c, nFrames, this->_convDst.data(), 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = *src << 8;
-            std::memcpy(dest, &v, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::Int24CToIntBytes(c, nFrames, this->_convDst.data(), 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = static_cast<float>(*src) / 8388608.0f;
-            std::memcpy(dest, &v, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::Int24ToFloat(c, nFrames, reinterpret_cast<float*>(this->_convDst.data()));
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = static_cast<double>(*src) / 8388608.0;
-            std::memcpy(dest, &v, 8);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::Int24ToDouble(c, nFrames, reinterpret_cast<double*>(this->_convDst.data()));
         break;
     default:
         break;
+    }
+    char* d = dest + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(d + (size_t)i * this->_frameSize, this->_convDst.data() + (size_t)i * this->_byteDepth, this->_byteDepth);
     }
 }
 
 void WaveBuffer::toInt32(char* src, int* dest, int nFrames, int chnIndex, int stride)
 {
-    src = src + chnIndex * this->_byteDepth;
+    char* s = src + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(this->_convSrc.data() + (size_t)i * this->_byteDepth, s + (size_t)i * this->_frameSize, this->_byteDepth);
+    }
+    int* c = reinterpret_cast<int*>(this->_convDst.data());
     switch (this->_type)
     {
-    case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = v;
-            src += this->_frameSize;
-            dest += stride;
-        }
+    case SampleType::INT16:
+        SampleConv::IntBytesToInt<int>(this->_convSrc.data(), nFrames, c, 2);
         break;
     case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;
-            *dest = v << 8;
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntBytesToInt<int>(this->_convSrc.data(), nFrames, c, 3);
         break;
-    case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = 0;
-            std::memcpy(&v, src, 2);
-            *dest = static_cast<int>(v) << 16;
-            src += this->_frameSize;
-            dest += stride;
-        }
+    case SampleType::INT32:
+        std::memcpy(c, this->_convSrc.data(), (size_t)nFrames * 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = 0;
-            std::memcpy(&v, src, 4);
-            *dest = static_cast<int>(std::round(std::clamp(static_cast<double>(v), -1.0, 1.0) * 2147483647.0));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::FloatToInt(reinterpret_cast<const float*>(this->_convSrc.data()), nFrames, c);
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = 0;
-            std::memcpy(&v, src, 8);
-            *dest = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 2147483647.0));
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::DoubleToInt(reinterpret_cast<const double*>(this->_convSrc.data()), nFrames, c);
         break;
     default:
         break;
+    }
+    for (int i = 0; i < nFrames; i++)
+    {
+        dest[(size_t)i * stride] = c[i];
     }
 }
 
 void WaveBuffer::fromInt32(int* src, char* dest, int nFrames, int chnIndex, int stride)
 {
-    dest = dest + chnIndex * this->_byteDepth;
+    int* c = reinterpret_cast<int*>(this->_convSrc.data());
+    for (int i = 0; i < nFrames; i++)
+    {
+        c[i] = src[(size_t)i * stride];
+    }
     switch (this->_type)
     {
-    case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            std::memcpy(dest, src, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+    case SampleType::INT16:
+        SampleConv::IntToIntBytes<int>(c, nFrames, this->_convDst.data(), 2);
         break;
     case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = *src >> 8;
-            dest[0] = static_cast<char>(v & 0xFF);
-            dest[1] = static_cast<char>((v >> 8) & 0xFF);
-            dest[2] = static_cast<char>((v >> 16) & 0xFF);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToIntBytes<int>(c, nFrames, this->_convDst.data(), 3);
         break;
-    case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = static_cast<short>(*src >> 16);
-            std::memcpy(dest, &v, 2);
-            src += stride;
-            dest += this->_frameSize;
-        }
+    case SampleType::INT32:
+        std::memcpy(this->_convDst.data(), this->_convSrc.data(), (size_t)nFrames * 4);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = static_cast<float>(*src) / 2147483648.0f;
-            std::memcpy(dest, &v, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToFloat(c, nFrames, reinterpret_cast<float*>(this->_convDst.data()));
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = static_cast<double>(*src) / 2147483648.0;
-            std::memcpy(dest, &v, 8);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntToDouble(c, nFrames, reinterpret_cast<double*>(this->_convDst.data()));
         break;
     default:
         break;
+    }
+    char* d = dest + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(d + (size_t)i * this->_frameSize, this->_convDst.data() + (size_t)i * this->_byteDepth, this->_byteDepth);
     }
 }
 
 void WaveBuffer::toInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride)
 {
-    src = src + chnIndex * this->_byteDepth;
-    dest = dest + chnIndex * 3;
+    char* s = src + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(this->_convSrc.data() + (size_t)i * this->_byteDepth, s + (size_t)i * this->_frameSize, this->_byteDepth);
+    }
     switch (this->_type)
     {
-    case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            dest[0] = src[0];
-            dest[1] = src[1];
-            dest[2] = src[2];
-            src += this->_frameSize;
-            dest += stride;
-        }
-        break;
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            short v = 0;
-            std::memcpy(&v, src, 2);
-            int value = static_cast<int>(v) << 8;
-            dest[0] = static_cast<char>(value & 0xFF);
-            dest[1] = static_cast<char>((value >> 8) & 0xFF);
-            dest[2] = static_cast<char>((value >> 16) & 0xFF);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntToIntBytes<short>(reinterpret_cast<short*>(this->_convSrc.data()), nFrames, this->_convDst.data(), 3);
+        break;
+    case SampleType::INT24:
+        std::memcpy(this->_convDst.data(), this->_convSrc.data(), (size_t)nFrames * 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = 0;
-            std::memcpy(&v, src, 4);
-            int value = v >> 8;
-            dest[0] = static_cast<char>(value & 0xFF);
-            dest[1] = static_cast<char>((value >> 8) & 0xFF);
-            dest[2] = static_cast<char>((value >> 16) & 0xFF);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::IntToIntBytes<int>(reinterpret_cast<int*>(this->_convSrc.data()), nFrames, this->_convDst.data(), 3);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            float v = 0;
-            std::memcpy(&v, src, 4);
-            int value = static_cast<int>(std::round(std::clamp(v, -1.0f, 1.0f) * 8388607.0f));
-            dest[0] = static_cast<char>(value & 0xFF);
-            dest[1] = static_cast<char>((value >> 8) & 0xFF);
-            dest[2] = static_cast<char>((value >> 16) & 0xFF);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::FloatToIntBytes(reinterpret_cast<const float*>(this->_convSrc.data()), nFrames, this->_convDst.data(), 3);
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            double v = 0;
-            std::memcpy(&v, src, 8);
-            int value = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 8388607.0));
-            dest[0] = static_cast<char>(value & 0xFF);
-            dest[1] = static_cast<char>((value >> 8) & 0xFF);
-            dest[2] = static_cast<char>((value >> 16) & 0xFF);
-            src += this->_frameSize;
-            dest += stride;
-        }
+        SampleConv::DoubleToIntBytes(reinterpret_cast<const double*>(this->_convSrc.data()), nFrames, this->_convDst.data(), 3);
         break;
     default:
         break;
+    }
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(dest + (size_t)i * stride, this->_convDst.data() + (size_t)i * 3, 3);
     }
 }
 
 void WaveBuffer::fromInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride)
 {
-    src = src + chnIndex * 3;
-    dest = dest + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(this->_convSrc.data() + (size_t)i * 3, src + (size_t)i * stride, 3);
+    }
     switch (this->_type)
     {
-    case SampleType::INT24:
-        for (int i = 0; i < nFrames; i++)
-        {
-            dest[0] = src[0];
-            dest[1] = src[1];
-            dest[2] = src[2];
-            src += stride;
-            dest += this->_frameSize;
-        }
-        break;
     case SampleType::INT16:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;
-            short s = static_cast<short>(v >> 8);
-            std::memcpy(dest, &s, 2);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntBytesToInt<short>(this->_convSrc.data(), nFrames, reinterpret_cast<short*>(this->_convDst.data()), 3);
+        break;
+    case SampleType::INT24:
+        std::memcpy(this->_convDst.data(), this->_convSrc.data(), (size_t)nFrames * 3);
         break;
     case SampleType::INT32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;
-            int value = v << 8;
-            std::memcpy(dest, &value, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntBytesToInt<int>(this->_convSrc.data(), nFrames, reinterpret_cast<int*>(this->_convDst.data()), 3);
         break;
     case SampleType::IEEE32:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;
-            float f = static_cast<float>(v) / 8388608.0f;
-            std::memcpy(dest, &f, 4);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntBytesToFloat(this->_convSrc.data(), nFrames, reinterpret_cast<float*>(this->_convDst.data()), 3);
         break;
     case SampleType::IEEE64:
-        for (int i = 0; i < nFrames; i++)
-        {
-            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
-            v >>= 8;
-            double d = static_cast<double>(v) / 8388608.0;
-            std::memcpy(dest, &d, 8);
-            src += stride;
-            dest += this->_frameSize;
-        }
+        SampleConv::IntBytesToDouble(this->_convSrc.data(), nFrames, reinterpret_cast<double*>(this->_convDst.data()), 3);
         break;
     default:
         break;
     }
+    char* d = dest + chnIndex * this->_byteDepth;
+    for (int i = 0; i < nFrames; i++)
+    {
+        std::memcpy(d + (size_t)i * this->_frameSize, this->_convDst.data() + (size_t)i * this->_byteDepth, this->_byteDepth);
+    }
 }
-
-

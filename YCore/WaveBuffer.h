@@ -357,6 +357,10 @@ private:
     int _frameSize;   //大小， 通道*位宽
 	std::unique_ptr<ByteRing> _pRing;
 
+    //整型/字节流转换临时缓冲(按帧容量分配, 去交织/转换用, 复用SampleConv)
+    std::vector<char> _convSrc;   //内部格式通道临时(连续)
+    std::vector<char> _convDst;   //目标格式通道临时(连续)
+
 };
 
 //交织浮点读取(泛型): 存储(交织) -> F(float/double) 交织输出, 返回读出的采样数
