@@ -3,636 +3,850 @@
 #include<ranges>
 #include<array>
 #include<print>
-#include"NumUtils.h"
+#include<process.h>
+#include<cstring>
+#include<algorithm>
+#include<chrono>
+#include"../../NumUtils.h"
+#include"../../SampleConv.h"
+#include"../../BitConverter.h"
 
 using namespace std;
 
 constexpr unsigned MAX_DRIVER_NUM = 2;  //最大支持的驱动数量
 
-constexpr int BUFFER_NOTIFY_MILLS = 20;   //系统通知的间隔
-constexpr int BUFFER_MAX_MILLS = 100;     //最大系统缓冲区
-
-
 
 struct ASIOEntity
 {
-	unique_ptr<ASIODriver> pASIODriver = nullptr;
-	//CLSID clsid;
-	ASIOCallbacks callback = {};
+    unique_ptr<ASIODriver> pASIODriver = nullptr;
+    ASIOCallbacks callback = {};
 };
 
 
-//回调函数模板，批量生成回调函数
+//回调函数模板, 批量生成回调函数
 template<unsigned N>
 struct __ASIOCALLBACK__
 {
-	static void bufferSwitch(long doubleBufferIndex, ASIOBool directProcess)
-	{
-		asioEntity->pASIODriver->bufferProcess(doubleBufferIndex, directProcess);
-	}
-	static void sampleRateDidChange(ASIOSampleRate sRate)
-	{
-
-	}
-	static long asioMessage(long selector, long value, void* message, double* opt)
-	{
-		long ret = 0;
-		switch (selector)
-		{
-		case kAsioSelectorSupported:
-			if (value == kAsioResetRequest
-				|| value == kAsioEngineVersion
-				|| value == kAsioResyncRequest
-				|| value == kAsioLatenciesChanged
-				// the following three were added for ASIO 2.0, you don't necessarily have to support them
-				|| value == kAsioSupportsTimeInfo
-				|| value == kAsioSupportsTimeCode
-				|| value == kAsioSupportsInputMonitor)
-				ret = 1L;
-			break;
-		case kAsioResetRequest:
-			// defer the task and perform the reset of the driver during the next "safe" situation
-			// You cannot reset the driver right now, as this code is called from the driver.
-			// Reset the driver is done by completely destruct is. I.e. ASIOStop(), ASIODisposeBuffers(), Destruction
-			// Afterwards you initialize the driver again.
-			//ASIODriverInfo.stopped;  // In this sample the processing will just stop
-			ret = 1L;
-			break;
-		case kAsioResyncRequest:
-			// This informs the application, that the driver encountered some non fatal data loss.
-			// It is used for synchronization purposes of different media.
-			// Added mainly to work around the Win16Mutex problems in Windows 95/98 with the
-			// Windows Multimedia system, which could loose data because the Mutex was hold too long
-			// by another thread.
-			// However a driver can issue it in other situations, too.
-			ret = 1L;
-			break;
-		case kAsioLatenciesChanged:
-			// This will inform the host application that the drivers were latencies changed.
-			// Beware, it this does not mean that the buffer sizes have changed!
-			// You might need to update internal delay data.
-			ret = 1L;
-			break;
-		case kAsioEngineVersion:
-			// return the supported ASIO version of the host application
-			// If a host applications does not implement this selector, ASIO 1.0 is assumed
-			// by the driver
-			ret = 2L;
-			break;
-		case kAsioSupportsTimeInfo:
-			// informs the driver wether the asioCallbacks.bufferSwitchTimeInfo() callback
-			// is supported.
-			// For compatibility with ASIO 1.0 drivers the host application should always support
-			// the "old" bufferSwitch method, too.
-			ret = 0;
-			break;
-		case kAsioSupportsTimeCode:
-			// informs the driver wether application is interested in time code info.
-			// If an application does not need to know about time code, the driver has less work
-			// to do.
-			ret = 0;
-			break;
-		}
-		return ret;
-	}
-	static ASIOTime* bufferSwitchTimeInfo(ASIOTime* params, long doubleBufferIndex, ASIOBool directProcess)
-	{
-		return nullptr;
-	}
-	//绑定的对象
-	static inline ASIOEntity* asioEntity = nullptr;
+    static void bufferSwitch(long doubleBufferIndex, ASIOBool directProcess)
+    {
+        asioEntity->pASIODriver->bufferProcess(doubleBufferIndex, directProcess);
+    }
+    static void sampleRateDidChange(ASIOSampleRate sRate)
+    {
+    }
+    static long asioMessage(long selector, long value, void* message, double* opt)
+    {
+        long ret = 0;
+        switch (selector)
+        {
+        case kAsioSelectorSupported:
+            if (value == kAsioResetRequest
+                || value == kAsioEngineVersion
+                || value == kAsioResyncRequest
+                || value == kAsioLatenciesChanged
+                || value == kAsioSupportsTimeInfo
+                || value == kAsioSupportsTimeCode
+                || value == kAsioSupportsInputMonitor)
+                ret = 1L;
+            break;
+        case kAsioResetRequest:
+            ret = 1L;
+            break;
+        case kAsioResyncRequest:
+            ret = 1L;
+            break;
+        case kAsioLatenciesChanged:
+            ret = 1L;
+            break;
+        case kAsioEngineVersion:
+            ret = 2L;
+            break;
+        case kAsioSupportsTimeInfo:
+            ret = 0;
+            break;
+        case kAsioSupportsTimeCode:
+            ret = 0;
+            break;
+        }
+        return ret;
+    }
+    static ASIOTime* bufferSwitchTimeInfo(ASIOTime* params, long doubleBufferIndex, ASIOBool directProcess)
+    {
+        return nullptr;
+    }
+    //绑定的对象
+    static inline ASIOEntity* asioEntity = nullptr;
 };
 
 template<unsigned... ids>
 array<ASIOEntity, MAX_DRIVER_NUM> registerCallbacks(std::integer_sequence<unsigned, ids...>)
 {
-	array<ASIOEntity, MAX_DRIVER_NUM> entitys;
-	([&object = entitys[ids]]()
-		{
-			object.callback.bufferSwitch = __ASIOCALLBACK__<ids>::bufferSwitch;
-			object.callback.asioMessage = __ASIOCALLBACK__<ids>::asioMessage;
-			object.callback.bufferSwitchTimeInfo = __ASIOCALLBACK__<ids>::bufferSwitchTimeInfo;
-			object.callback.sampleRateDidChange = __ASIOCALLBACK__<ids>::sampleRateDidChange;
-			__ASIOCALLBACK__<ids>::asioEntity = &object;
-			std::println("注册:{}", ids);
-		}(), ...);
+    array<ASIOEntity, MAX_DRIVER_NUM> entitys;
+    ([&object = entitys[ids]]()
+        {
+            object.callback.bufferSwitch = __ASIOCALLBACK__<ids>::bufferSwitch;
+            object.callback.asioMessage = __ASIOCALLBACK__<ids>::asioMessage;
+            object.callback.bufferSwitchTimeInfo = __ASIOCALLBACK__<ids>::bufferSwitchTimeInfo;
+            object.callback.sampleRateDidChange = __ASIOCALLBACK__<ids>::sampleRateDidChange;
+            __ASIOCALLBACK__<ids>::asioEntity = &object;
+            std::println("注册:{}", ids);
+        }(), ...);
 
-	return entitys;
-};
+    return entitys;
+}
 
-//对象数组，根据支持的板卡数生成数组
+//对象数组, 根据支持的板卡数生成数组
 array<ASIOEntity, MAX_DRIVER_NUM> ASIOEntitys = registerCallbacks(std::make_integer_sequence<unsigned, MAX_DRIVER_NUM>());
-//驱动锁，用于全局获取驱动时进行锁定
+//驱动锁, 用于全局获取驱动时进行锁定
 static mutex gMTX;
 
 
-//std::expected<void, std::string> ASIODriver::start()
-//{
-//
-//    std::packaged_task<std::expected<void, std::string>()> task([this] {
-//        //return this->device->start();
-//		return std::expected<void, std::string>();
-//    });
-//    auto future = task.get_future();
-//
-//    this->taskList.push_back(std::move(task));
-//
-//
-//
-//
-//    return future.get();
-//}
-//
-//std::future<std::expected<void, std::string>> ASIODriver::submitTask(task_type task)
-//{
-//    auto future = task.get_future();
-//
-//    {
-//        std::lock_guard<std::mutex> lock(this->mtx);
-//        //加锁
-//        this->taskList.push_back(std::move(task));
-//    }
-//
-//    cv.notify_one();
-//
-//    return future;
-//}
-
-
-constexpr int maxDelayMills = 50;
-constexpr int minDelayMills = 40;
-
-
-
-
-
-
-
-
-
-ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid)
-	:asioID(clsid)
+ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills, int maxDelayMills)
+    : asioID(clsid)
 {
-	//int sampleRate = 48000;
-	//int sampleSize = maxDelayMills * sampleRate / 1000.0f;  //最大采样点
-	//int num = 1;
-	//sampleSize >>= 1;
-	//while (sampleSize > 0)
-	//{
-	//	sampleSize >>= 1;
-	//	num <<= 1;
-	//}
-	////num 就是比maxDelay小的2的整次方。
-	//
-	//float delay = num * 1000.0f / sampleRate;
-	//if (delay < minDelayMills)
-	//{
-	//	num *= 2;
-	//}
+    //notifyMills/maxDelayMills 有效范围由 ASIODevice 构造函数校验(超出抛异常)
+    this->pAsioDevice = std::make_unique<ASIODevice>(callbacks, clsid, notifyMills, maxDelayMills);
 
-	this->pAsioDevice = std::make_unique<ASIODevice>(callbacks, clsid);
-
+    //引擎通知/退出事件(系统句柄, 等待期间不持锁)
+    this->hNotify = CreateEvent(NULL, FALSE, FALSE, NULL);   //自动复位: 通知单脉冲
+    this->hExit = CreateEvent(NULL, TRUE, FALSE, NULL);      //手动复位: 停止
 }
 
 ASIODriver::~ASIODriver()
 {
-	this->processFlag = false;
-	this->cv.notify_one();
-	// if (this->fu.valid())
-	// {
-	// 	this->fu.get();
-	// }
-	if(this->hThread != INVALID_HANDLE_VALUE)
-	{
-		WaitForSingleObject(this->hThread, INFINITE);
-		CloseHandle(this->hThread);
-		this->hThread = INVALID_HANDLE_VALUE;
-	}
+    //停止引擎线程
+    this->processFlag.store(false);
+    if (this->hNotify != INVALID_HANDLE_VALUE) SetEvent(this->hNotify);
+    if (this->hExit != INVALID_HANDLE_VALUE) SetEvent(this->hExit);
+    if (this->hThread != INVALID_HANDLE_VALUE)
+    {
+        WaitForSingleObject(this->hThread, INFINITE);
+        CloseHandle(this->hThread);
+        this->hThread = INVALID_HANDLE_VALUE;
+    }
 
+    //设备相关操作统一在STA线程释放
+    if (this->pAsioDevice != nullptr)
+    {
+        auto future = this->staWorker.submit(
+            [this] {
+                println("主动释放资源");
+                this->pAsioDevice.reset();
+                return STAType();
+            });
+        (void)future.get();
+    }
 
-	if (this->pAsioDevice != nullptr)
-	{
-		auto future = this->staWorker.submit(
-						[this] {
-							println("主动释放资源");
-							this->pAsioDevice.reset();
-							return STAType();
-						});
-		auto xxx = future.get();
-	}
+    if (this->hNotify != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(this->hNotify);
+        this->hNotify = INVALID_HANDLE_VALUE;
+    }
+    if (this->hExit != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(this->hExit);
+        this->hExit = INVALID_HANDLE_VALUE;
+    }
 
-
+    this->clients.clear();
+    this->gcClients.clear();
+    this->viewGC.clear();
+    this->chViews.reset();
 }
 
-std::expected<void, std::string> ASIODriver::create(CLSID clsid)
+std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask, int bufferMills)
 {
+    if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
+    {
+        return std::unexpected("驱动缓冲区未就绪");
+    }
+    if (channelMask == 0)
+    {
+        return std::unexpected("通道掩码不能为0");
+    }
+    int outputMask = (int)this->pAsioDevice->outputMask;
+    if ((channelMask & outputMask) != channelMask)
+    {
+        return std::unexpected("通道掩码超出激活的输出通道");
+    }
 
-
-	static array<ASIOEntity, MAX_DRIVER_NUM> ASIOOBJECTS; // = registerCallbacks(std::make_index_sequence<MAX_DRIVER_NUM>{});
-
-
-	//创建对象
-	this->pAsioDevice = std::make_unique<ASIODevice>(nullptr, clsid);
-
-	auto result = this->pAsioDevice->deviceInit();  //初始化驱动
-	if (!result)
-	{
-		return std::expected<void, std::string>(std::unexpect, "Failed to initialize ASIO device");
-	}
-
-	return std::expected<void, std::string>();
+    ASIORender* pRender = new ASIORender(this, channelMask, bufferMills);
+    return pRender;
 }
 
-std::expected<ASIORender*, std::string>ASIODriver::createRender(int channelMask)
-{	
-	int outputMask = this->pAsioDevice->outputMask;
-	if (channelMask > outputMask)
-	{
-		return std::unexpected("不支持的通道值1");
-	}
-
-	if ((channelMask & outputMask) != channelMask)
-	{
-		return std::unexpected("不支持的通道2");
-	}
-
-
-	ASIORender* pRender = new ASIORender(this, channelMask);
-
-	auto& vec = pRender->_channels;
-	for (auto v : vec)
-	{
-		// for (auto& buf : this->pAsioDevice->outputRing)
-		// {
-		// 	if (v == buf.channel)
-		// 	{
-		// 		WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
-		// 		pRender->_buffers.push_back(std::move(waveRing));
-		// 	}
-		// }
-	}
-
-	{
-		lock_guard<mutex> lg(this->mtx);
-		this->renderLsts.push_back(pRender);
-	}
-
-
-
-	return pRender;
-}
-
-std::expected<ASIOCapture*, std::string>ASIODriver::createCapture(int channelMask)
+std::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMask, int bufferMills)
 {
-	int inputMask = this->pAsioDevice->inputMask;
-	if (channelMask > inputMask)
-	{
-		return std::unexpected("不支持的通道值1");
-	}
+    if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
+    {
+        return std::unexpected("驱动缓冲区未就绪");
+    }
+    if (channelMask == 0)
+    {
+        return std::unexpected("通道掩码不能为0");
+    }
+    int inputMask = (int)this->pAsioDevice->inputMask;
+    if ((channelMask & inputMask) != channelMask)
+    {
+        return std::unexpected("通道掩码超出激活的输入通道");
+    }
 
-	if ((channelMask & inputMask) != channelMask)
-	{
-		return std::unexpected("不支持的通道2");
-	}
-
-
-	ASIOCapture* pCapture = new ASIOCapture(this, channelMask);
-
-	auto& vec = pCapture->_channels;
-	for (auto v : vec)
-	{
-		// for (auto& buf : this->pAsioDevice->outputRing)
-		// {
-		// 	if (v == buf.channel)
-		// 	{
-		// 		WaveRingBuffer waveRing(buf.sampleType, this->maxBufferSize);
-		// 		pCapture->_buffers.push_back(std::move(waveRing));
-		// 	}
-		// }
-	}
-
-	{
-		lock_guard<mutex> lg(this->mtx);
-		_Client2  cccc;
-		//this->captureLsts.push_back(pCapture);
-		std::vector<_Client2*> temp = this->clients;  //先拷贝一份
-		temp.push_back(nullptr);
-
-		
-
-
-		//同步刷新单通道的列表，也用COW模式
-
-		//自旋锁
-		this->clients.swap(temp); //交换对象
-	
-	}
-
-
-	
-
-
-
-	return pCapture;
+    ASIOCapture* pCapture = new ASIOCapture(this, channelMask, bufferMills);
+    return pCapture;
 }
 
-void ASIODriver::removeClient(_Client2 *client)
+_Client2* ASIODriver::registerClient(const std::vector<int>& channels, int type, int bufferMills)
 {
-	{
-		lock_guard<mutex> lg(this->mtx);
-		//this->captureLsts.push_back(pCapture);
-		std::vector<_Client2*> temp = this->clients;  //先拷贝一份
-		temp.push_back(nullptr);
-		//自旋锁
-		this->clients.swap(temp); //交换对象
-	
-	}
+    if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
+    {
+        return nullptr;
+    }
 
-	//释放移除的对象。
+    auto client = std::make_unique<_Client2>();
+    client->type = type;
+    client->chs = channels;
+    //客户端缓冲与引擎缓冲独立: 按时间(bufferMills)换算帧数, 0=默认用引擎环形容量
+    int frames = 0;
+    if (bufferMills > 0)
+    {
+        frames = (int)((long long)bufferMills * this->pAsioDevice->sampleRate / 1000);
+        if (frames < this->pAsioDevice->notifyFrames)
+        {
+            frames = this->pAsioDevice->notifyFrames;  //至少容纳一个通知周期
+        }
+    }
+    else
+    {
+        frames = this->pAsioDevice->haBufferSize;
+    }
+    for (size_t k = 0; k < channels.size(); k++)
+    {
+        auto wb = std::make_unique<WaveBuffer>(this->pAsioDevice->sampleType, frames, 1);
+        client->wbs.push_back(std::move(wb));
+    }
+
+    _Client2* raw = client.get();
+    {
+        std::lock_guard<std::mutex> lk(this->mtx);
+        this->clients.push_back(std::move(client));
+
+        //COW增量更新视图: 拷贝当前视图, 只修改新增客户端涉及的通道, 原子换新, 旧视图入GC
+        if (this->chViews)
+        {
+            auto newView = std::make_shared<std::vector<_Channel>>(*this->chViews);
+            for (size_t k = 0; k < channels.size(); k++)
+            {
+                int idx = this->channelViewIndex(channels[k], type);
+                if (idx >= 0)
+                {
+                    (*newView)[idx].wbs.push_back(raw->wbs[k].get());
+                }
+            }
+            this->viewGC.push_back(this->chViews);
+            this->chViews = newView;
+        }
+    }
+    if (this->hNotify != INVALID_HANDLE_VALUE)
+    {
+        SetEvent(this->hNotify);   //唤醒引擎抓取新视图
+    }
+    return raw;
+}
+
+void ASIODriver::removeClient(_Client2* client)
+{
+    if (client == nullptr)
+    {
+        return;
+    }
+
+    std::unique_lock<std::mutex> lk(this->mtx);
+    auto it = std::find_if(this->clients.begin(), this->clients.end(),
+        [client](const std::unique_ptr<_Client2>& u) { return u.get() == client; });
+    if (it == this->clients.end())
+    {
+        return;
+    }
+
+    //移入客户端GC: 缓冲仍需存活, 等引擎每轮结束清理时释放(旧视图引用不悬垂)
+    this->gcClients.push_back(std::move(*it));
+    this->clients.erase(it);
+
+    //COW增量更新视图: 拷贝当前视图, 只移除被删客户端涉及的通道, 原子换新, 旧视图入GC
+    if (this->chViews)
+    {
+        auto newView = std::make_shared<std::vector<_Channel>>(*this->chViews);
+        for (size_t k = 0; k < client->chs.size(); k++)
+        {
+            int idx = this->channelViewIndex(client->chs[k], client->type);
+            if (idx >= 0)
+            {
+                auto& wbs = (*newView)[idx].wbs;
+                wbs.erase(std::remove(wbs.begin(), wbs.end(), client->wbs[k].get()), wbs.end());
+            }
+        }
+        this->viewGC.push_back(this->chViews);
+        this->chViews = newView;
+    }
+
+    lk.unlock();
+    if (this->hNotify != INVALID_HANDLE_VALUE)
+    {
+        SetEvent(this->hNotify);   //唤醒引擎抓取新视图
+    }
+
+    //引擎未运行时, 立即清理GC(旧视图/已删客户端无人使用)
+    if (!this->processFlag.load())
+    {
+        std::lock_guard<std::mutex> lk2(this->mtx);
+        this->cleanupGC();
+    }
 }
 
 /**
-* 1、能够按照缓冲时间来，就无限期等待，等待驱动通知
-* 2、按照超长时刻，就按照一半时刻来进行等待，主动超时唤醒。
-* 3、每个通知周期有两次唤醒，第一次是超时，第二次是主动唤醒，第二次无限等待。
-*/
-void ASIODriver::processor()
+ * 物理通道号 -> 视图索引
+ * 视图顺序与 _cbBuffers 一致: 激活输入通道在前, 输出通道在后
+ */
+int ASIODriver::channelViewIndex(int channel, int type) const
 {
-
-	auto& pDevice = this->pAsioDevice;
-	auto deviceByteSize = pDevice->deviceByteSize;
-	auto deviceFrameSize = pDevice->bufferSize;
-
-	int notifyByteSize = this->notifyBufferSize * pDevice->bitDepth; //缓冲区字节数
-
-	float* temp = new float[notifyBufferSize];
-
-	int offset =  0;
-	int _iActiveNum = this->pAsioDevice->_iActiveNum;
-	int _oActiveNum = this->pAsioDevice->_oActiveNum;
-	int totalActiveNum = this->pAsioDevice->totalActiveNum;
-
-	auto& buffers = this->pAsioDevice->_cbBuffers;
-	
-	float* mixBuffer = nullptr;
-
-	int n = 0;
-	while (this->processFlag)
-	{
-		std::unique_lock lk(this->mtx);
-		this->cv.wait(lk);//在这里等待回调的通知。
-
-		auto frameSize = this->_validFrameNum.load(memory_order_acquire);
-
-		while (frameSize > deviceFrameSize)
-		{
-
-			frameSize = this->_validFrameNum.fetch_sub(deviceFrameSize, memory_order_acq_rel); //减去空间，循环执行。
-		
-			auto capCounter = pDevice->_captureCounter.load(memory_order_acquire);
-			auto wpos1 = capCounter & (this->pAsioDevice->_haBuffersize - 1); //写位置。
-
-			//处理输入通道
-			for(int i=0; i<_iActiveNum; i++)
-			{
-				offset = i;
-				auto& chView = this->chViews[offset];
-				if(chView.wbs.empty())
-				{
-					continue;
-				}
-				
-				auto& input = buffers[offset];
-				auto src = input._buf + wpos1;  //读取的原始位置
-				for(auto& wb : chView.wbs)
-				{
-					wb->writeBytes(src, deviceByteSize);
-				}
-
-			}
-
-			//处理输出通道
-			auto wpos2 = pDevice->_renderReadPos.load(memory_order_acquire);
-			for(int i=0; i<_oActiveNum; i++)
-			{
-				offset = i + _iActiveNum;
-				auto& chView = this->chViews[offset];
-				auto size = chView.wbs.size();
-				if(size == 0)
-				{
-					//对应内存写0
-				}else
-				{
-					//如果类型一致就直接拷贝，不走后面的转换了。不然就走转换
-
-					//--
-					auto& wb = chView.wbs[0];
-					wb->readFloat(mixBuffer, 1024);  //先把第一个通道的内容读出来。
-					//如果数据不够就给mixBuffer补0 
-					for(int k = 1; k<size; k++)
-					{
-						auto& wb2 = chView.wbs[k];
-						wb2->readFloat(temp, 1024);
-						
-						for(int m = 0; m< 1024; m++)
-						{
-							mixBuffer[m]+=temp[m];
-						}
-					}
-					//转码后写入对应缓冲区
-				}
-			}
-		
-		
-		
-		
-		}
-
-		if (this->processFlag == false)
-		{
-			break;
-		}
-
-		//引擎接收到回调的通知后开始处理数据
-
-		//先将环形缓冲区中的数据读走。
-		long mills = this->sw.ElapsedMillis();
-		this->sw.Reset();
-		this->sw.Start();
-		println("接收到信号:{}", mills);
-
-		Stopwatch sw1;
-		sw1.Start();
-
-		println("拷贝耗时: {}", sw1.ElapsedMillis());
-	}
-
-	println("监听线程退出:{}", this->processFlag);
-
-
-
-
-	//在这里做增删改查
-
-
-
-
+    auto& dev = this->pAsioDevice;
+    if (dev == nullptr)
+    {
+        return -1;
+    }
+    if (type == ASIOTrue)
+    {
+        for (int i = 0; i < dev->_iActiveNum; i++)
+        {
+            if (dev->_cbBuffers[i].channel == channel)
+            {
+                return i;
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < dev->_oActiveNum; i++)
+        {
+            if (dev->_cbBuffers[dev->_iActiveNum + i].channel == channel)
+            {
+                return dev->_iActiveNum + i;
+            }
+        }
+    }
+    return -1;
 }
 
+/**
+ * 清理GC: 释放旧视图快照与已移除客户端缓冲。
+ * 引擎每轮处理结束后调用; 未来可转发到线程池异步执行, 此处先同步清理。
+ */
+void ASIODriver::cleanupGC()
+{
+    this->viewGC.clear();
+    this->gcClients.clear();
+}
 
+/**
+ * 引擎线程:
+ * 1、启动前的初始化(复位计数器/分配缓冲/构建视图/预填输出)由 start() 外部串行完成
+ * 2、等待系统事件(hNotify通知脉冲 / hExit退出), 等待期间不持锁
+ * 3、唤醒后原子抓取当前聚合视图引用, 再处理数据:
+ *    - 输入: 从输入环形区拷贝采集数据到各录音客户端(仅当有整批数据, 通知对应帧数的整倍数)
+ *    - 输出: 从各播放客户端对应通道混频数据到输出环形区(按回调已消费量补充, 与通知节奏解耦)
+ * 4、本轮处理结束后清理GC(旧视图快照/已移除客户端缓冲)
+ *
+ * 说明: 通知只是"单脉冲唤醒", 工作量由计数器(capCounter - iReadPos)决定;
+ *      客户端增删在对应函数内COW增量更新视图并原子换新, 引擎每轮抓取即可始终拿到有效视图.
+ */
+void ASIODriver::processor()
+{
+    auto& dev = this->pAsioDevice;
+    if (dev == nullptr || !dev->bufferReady)
+    {
+        println("引擎退出: 缓冲区未就绪");
+        this->processFlag.store(false);
+        return;
+    }
 
+    //引擎主循环: 等待系统事件(hNotify通知 / hExit退出), 等待期间不持锁
+    HANDLE waits[2] = { this->hNotify, this->hExit };
+    while (this->processFlag.load())
+    {
+        DWORD wr = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+        if (wr == WAIT_FAILED || wr == WAIT_OBJECT_0 + 1)
+        {
+            break;   //失败或退出事件
+        }
+        if (!this->processFlag.load())
+        {
+            break;   //hNotify唤醒但已停止(可能同时置位了hExit)
+        }
+
+        //2.1 原子抓取当前聚合视图引用(客户端增删已COW换新, 这里始终拿到有效视图)
+        std::shared_ptr<std::vector<_Channel>> view;
+        {
+            std::lock_guard<std::mutex> lk(this->mtx);
+            view = this->chViews;
+        }
+
+        //2.2 处理数据(不持锁)
+        if (view)
+        {
+            auto t0 = std::chrono::steady_clock::now();
+
+            unsigned notifyBuffers = (unsigned)(dev->notifyFrames / dev->deviceFrameSize);  //每次通知的回调次数
+            auto capCounter = dev->_captureCounter.load(std::memory_order_acquire);         //回调计数
+            unsigned available = capCounter - this->iReadPos;                               //未读回调数
+            //输入覆盖式: 落后太多时丢弃旧数据, 只保留最新通知帧, 保持数据对齐
+            unsigned maxLag = (unsigned)dev->bufferCount - notifyBuffers;
+            if (available > maxLag)
+            {
+                unsigned dropped = available - notifyBuffers;   //被覆盖丢弃的回调数
+                this->_inputDroppedFrames.fetch_add((long long)dropped * dev->deviceFrameSize, std::memory_order_relaxed);
+                this->iReadPos = capCounter - notifyBuffers;
+                available = notifyBuffers;
+            }
+            //inBatches: 输入整批数(通知对应帧数的整倍数; 为0时表示无可读输入, 不读)
+            int inBatches = (int)(available / notifyBuffers);
+            this->processData(*view, inBatches);
+
+            auto t1 = std::chrono::steady_clock::now();
+            this->_procUs.fetch_add((long long)std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
+                std::memory_order_relaxed);
+            this->_procCount.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        //2.3 本轮结束清理GC(旧视图/已移除客户端, 引擎本轮视图已不再引用)
+        {
+            std::lock_guard<std::mutex> lk(this->mtx);
+            this->cleanupGC();
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(this->mtx);
+        this->cleanupGC();
+    }
+    println("监听线程退出");
+}
+
+/**
+ * 重建通道聚合视图(COW快照):
+ * 视图顺序与 _cbBuffers 一致: 激活的输入通道在前, 输出通道在后
+ * 每个通道关联所有订阅该通道的客户端缓冲
+ */
+std::shared_ptr<std::vector<_Channel>> ASIODriver::buildView()
+{
+    auto& dev = this->pAsioDevice;
+    int iActive = dev->_iActiveNum;
+    int oActive = dev->_oActiveNum;
+    int total = dev->totalActiveNum;
+
+    auto view = std::make_shared<std::vector<_Channel>>(total);
+    for (int i = 0; i < total; i++)
+    {
+        (*view)[i].channel = dev->_cbBuffers[i].channel;
+        (*view)[i].type = dev->_cbBuffers[i].type;
+    }
+
+    //物理通道号 -> 视图索引
+    std::vector<int> inMap((size_t)dev->num_of_capture, -1);
+    std::vector<int> outMap((size_t)dev->num_of_render, -1);
+    for (int i = 0; i < iActive; i++) inMap[(*view)[i].channel] = i;
+    for (int i = 0; i < oActive; i++) outMap[(*view)[iActive + i].channel] = iActive + i;
+
+    for (auto& c : this->clients)
+    {
+        for (size_t k = 0; k < c->chs.size(); k++)
+        {
+            int ch = c->chs[k];
+            int idx = -1;
+            if (c->type == ASIOTrue)
+            {
+                if (ch >= 0 && ch < (int)dev->num_of_capture) idx = inMap[ch];
+            }
+            else
+            {
+                if (ch >= 0 && ch < (int)dev->num_of_render) idx = outMap[ch];
+            }
+            if (idx >= 0)
+            {
+                (*view)[idx].wbs.push_back(c->wbs[k].get());
+            }
+        }
+    }
+    return view;
+}
+
+/**
+ * 处理数据:
+ * 输入: 读 inBatches 个整批(每批 = notifyBuffers 个槽, 需处理槽回绕);
+ *       仅当 inBatches>0 且激活输入通道时读, 避免客户端增删唤醒时读到脏数据
+ * 输出: 按回调已消费量(drained)补充混频, 与通知节奏解耦, 天然匹配任何唤醒时机
+ */
+void ASIODriver::processData(const std::vector<_Channel>& view, int inBatches)
+{
+    auto& dev = this->pAsioDevice;
+    int bitDepth = dev->bitDepth;
+    int notifyBuffers = dev->notifyFrames / dev->deviceFrameSize;   //每次通知的回调次数
+    int bufferCount = dev->bufferCount;
+    int deviceByteSize = dev->deviceByteSize;
+    int iActive = dev->_iActiveNum;
+    int inBytes = notifyBuffers * deviceByteSize;   //每次通知的字节数
+
+    //----- 输入: 环形区(按槽) -> 各录音客户端 -----
+    if (iActive > 0 && inBatches > 0)
+    {
+        for (int b = 0; b < inBatches; b++)
+        {
+            unsigned startSlot = this->iReadPos & (unsigned)(bufferCount - 1);
+            int tailSlots = bufferCount - (int)startSlot;
+            int seg1 = tailSlots < notifyBuffers ? tailSlots : notifyBuffers;   //到尾部的槽数
+            int seg2 = notifyBuffers - seg1;                                     //回绕到头部的槽数
+
+            for (int i = 0; i < iActive; i++)
+            {
+                auto& chView = view[i];
+                if (chView.wbs.empty())
+                {
+                    continue;
+                }
+                const char* ring = dev->_cbBuffers[i]._buf;
+                std::memcpy(this->_ioTemp.data(), ring + (size_t)startSlot * deviceByteSize,
+                    (size_t)seg1 * deviceByteSize);
+                if (seg2 > 0)
+                {
+                    std::memcpy(this->_ioTemp.data() + (size_t)seg1 * deviceByteSize, ring,
+                        (size_t)seg2 * deviceByteSize);
+                }
+                for (WaveBuffer* wb : chView.wbs)
+                {
+                    wb->writeBytes(this->_ioTemp.data(), inBytes);
+                }
+            }
+            this->iReadPos += (unsigned)notifyBuffers;
+        }
+    }
+
+    //----- 输出: 补充回调已消费的量(与通知节奏解耦, 不多不少, 避免门限打满误报) -----
+    auto rpos = dev->_renderReadPos.load(std::memory_order_acquire);
+    unsigned drained = rpos - this->lastRenderReadPos;
+    this->lastRenderReadPos = rpos;
+    if (drained > 0)
+    {
+        this->mixOutput(view, (int)drained * dev->deviceFrameSize);
+    }
+}
+
+/**
+ * 从播放客户端混频写入输出环形区:
+ * 1、混频: 同一通道的多个客户端缓冲按float相加
+ * 2、精确门限: 只填充到 outputLimitFrames, 不覆盖已写入数据, 精确控制播放延迟
+ * 3、float -> 设备采样格式字节后写入环形区(按缓冲区槽组织, 支持槽回绕)
+ */
+int ASIODriver::mixOutput(const std::vector<_Channel>& view, int frames)
+{
+    auto& dev = this->pAsioDevice;
+    int iActive = dev->_iActiveNum;
+    int oActive = dev->_oActiveNum;
+    if (oActive == 0)
+    {
+        return 0;
+    }
+
+    auto rpos = dev->_renderReadPos.load(std::memory_order_acquire);    //回调计数
+    auto wpos = dev->_renderWritePos.load(std::memory_order_relaxed);   //回调计数
+    int inFlight = (int)(wpos - rpos);                                  //在途回调数
+    int limitBuffers = dev->outputLimitFrames / dev->deviceFrameSize;   //精确门限对应的回调数
+    int wantBuffers = frames / dev->deviceFrameSize;
+    int toWriteBuffers = limitBuffers - inFlight;
+    if (toWriteBuffers > wantBuffers)
+    {
+        toWriteBuffers = wantBuffers;
+    }
+    if (toWriteBuffers <= 0)
+    {
+        //精确门限已打满: 数据滞留客户端, 播放延迟已达上限
+        this->_outputFullFrames.fetch_add((long long)wantBuffers * dev->deviceFrameSize, std::memory_order_relaxed);
+        return 0;  //已填满精确门限, 不再写入
+    }
+    if (toWriteBuffers < wantBuffers)
+    {
+        this->_outputFullFrames.fetch_add((long long)(wantBuffers - toWriteBuffers) * dev->deviceFrameSize,
+            std::memory_order_relaxed);
+    }
+    int toWriteFrames = toWriteBuffers * dev->deviceFrameSize;
+
+    int bufferCount = dev->bufferCount;
+    int deviceByteSize = dev->deviceByteSize;
+    unsigned startSlot = (unsigned)(wpos & (unsigned)(bufferCount - 1));
+    int tailSlots = bufferCount - (int)startSlot;
+    int seg1 = tailSlots < toWriteBuffers ? tailSlots : toWriteBuffers;   //到尾部的槽数
+    int seg2 = toWriteBuffers - seg1;                                     //回绕到头部的槽数
+    int outBytes = toWriteFrames * dev->bitDepth;
+
+    for (int j = 0; j < oActive; j++)
+    {
+        auto& chView = view[iActive + j];
+        if (chView.wbs.size() == 1)
+        {
+            //快路径: 单客户端且采样格式与设备一致, 直接拷贝设备原始字节(免浮点往返)
+            int got = chView.wbs[0]->readBytes(this->_oConvert.data(), outBytes);
+            if (got < outBytes)
+            {
+                std::memset(this->_oConvert.data() + got, 0, outBytes - got);
+            }
+        }
+        else
+        {
+            //混频路径: float求和 + 峰值限幅 + 转设备格式
+            std::fill(this->_mixBuf.begin(), this->_mixBuf.end(), 0.0f);
+            for (WaveBuffer* wb : chView.wbs)
+            {
+                int n = wb->readFloat(this->_tmpBuf.data(), toWriteFrames);
+                for (int m = 0; m < n; m++)
+                {
+                    this->_mixBuf[m] += this->_tmpBuf[m];
+                }
+            }
+
+            //峰值限幅(防削波): 峰值超过1.0时整块等比缩放, 避免转整数时削波
+            if (this->mixPeakLimit)
+            {
+                float peak = 0.0f;
+                for (int m = 0; m < toWriteFrames; m++)
+                {
+                    float v = this->_mixBuf[m];
+                    if (v < 0.0f) v = -v;
+                    if (v > peak) peak = v;
+                }
+                if (peak > 1.0f)
+                {
+                    float gain = 1.0f / peak;
+                    for (int m = 0; m < toWriteFrames; m++)
+                    {
+                        this->_mixBuf[m] *= gain;
+                    }
+                }
+            }
+
+            this->mixToBytes(this->_mixBuf.data(), this->_oConvert.data(), toWriteFrames);
+        }
+
+        char* ring = dev->_cbBuffers[iActive + j]._buf;
+        std::memcpy(ring + (size_t)startSlot * deviceByteSize, this->_oConvert.data(),
+            (size_t)seg1 * deviceByteSize);
+        if (seg2 > 0)
+        {
+            std::memcpy(ring, this->_oConvert.data() + (size_t)seg1 * deviceByteSize,
+                (size_t)seg2 * deviceByteSize);
+        }
+    }
+
+    dev->_renderWritePos.fetch_add((unsigned)toWriteBuffers, std::memory_order_release);
+    return toWriteFrames;
+}
+
+//播放数据预填(驱动启动前调用, 建立可控的起始播放延迟)
+void ASIODriver::prefillOutput(const std::vector<_Channel>& view)
+{
+    if (this->pAsioDevice->_oActiveNum > 0)
+    {
+        this->mixOutput(view, this->pAsioDevice->outputLimitFrames);
+    }
+}
+
+//float -> 设备采样格式字节
+void ASIODriver::mixToBytes(const float* src, char* dst, int frames)
+{
+    switch (this->pAsioDevice->sampleType)
+    {
+    case SampleType::IEEE32:
+        std::memcpy(dst, src, (size_t)frames * 4);
+        break;
+    case SampleType::INT16:
+        SampleConv::FloattoInt16(const_cast<float*>(src), frames, (short*)dst);
+        break;
+    case SampleType::INT32:
+        SampleConv::FloattoInt32(const_cast<float*>(src), frames, (int*)dst);
+        break;
+    case SampleType::INT24:
+        SampleConv::FloattoInt24Byte(const_cast<float*>(src), frames, dst);
+        break;
+    default:
+        std::memset(dst, 0, (size_t)frames * 4);
+        break;
+    }
+}
+
+/**
+ * 底层驱动回调(驱动线程):
+ * 1、输入采集填充到输入环形区 / 输出环形区取数
+ * 2、达到通知门限(整倍数)后发单脉冲唤醒引擎
+ */
 void ASIODriver::bufferProcess(long doubleBufferIndex, ASIOBool directProcess)
 {
+    (void)directProcess;
+    auto& dev = this->pAsioDevice;
+    if (dev == nullptr || !dev->bufferReady)
+    {
+        return;
+    }
 
-	auto& pDevice = this->pAsioDevice;
-	auto deviceByteSize = pDevice->deviceByteSize;  //缓冲区字节数
-	auto deviceFrameSize = pDevice->bufferSize;
+    dev->bufferProcess(doubleBufferIndex);
 
-	int offset = 0;
-	int haSize = 0;  //缓冲区的通知总大小
-	int _iActiveNum = this->pAsioDevice->_iActiveNum; //激活的输入通道数
-	int _oActiveNum = this->pAsioDevice->_oActiveNum; //激活的输出通道数
-	int _totalNum = this->pAsioDevice->totalActiveNum;  //总激活的通道数
-
-	auto& buffers = this->pAsioDevice->_cbBuffers;  //回调缓冲区
-
-	int captureCounter = this->pAsioDevice->_captureCounter.load(memory_order_acquire);  //输入缓冲区计数器
-	int _wpos = captureCounter & (haSize - 1); //写位置。
-	for(int i=0; i< _iActiveNum; i++)
-	{
-		auto& input = buffers[i];
-
-		void* buffer = input.buffers[doubleBufferIndex];  
-        char* ptr = static_cast<char*>(buffer);   //硬件的缓冲区
-        auto dest = input._buf + _wpos;
-		memcpy(dest, ptr, 1024); //直接拷贝对应数量，这里是帧对齐的，不用计算容量了。
-	}
-	this->pAsioDevice->_captureCounter.fetch_add(1024, memory_order_release);
-
-	auto rpos = this->pAsioDevice->_renderReadPos.load(memory_order_acquire);  //输出读位置
-	//for (auto& output : outputs)
-	for(int i=0; i< _oActiveNum; i++)
-	{
-		offset = _iActiveNum + i;
-		auto& output = buffers[offset];
-		auto* buffer = output.buffers[doubleBufferIndex];
-        char* dest = static_cast<char*>(buffer);
-        std::fill_n(dest, deviceByteSize, 0); //清空缓冲区
-        auto src = output._buf + rpos;
-		memcpy(dest, src, 1024);  //读取对应的数据，引擎保证数据是有效的
-	}
-	this->pAsioDevice->_captureCounter.fetch_add(deviceFrameSize, memory_order_acq_rel);  //增加计数器
-
-
-
-	auto bufferCounter = this->_validFrameNum.fetch_add(deviceFrameSize, memory_order_acq_rel);
-	
-	if (bufferCounter == 0)
-	{
-		this->sw.Start();
-	}
-
-	bufferCounter += deviceFrameSize;
-
-	if (bufferCounter == this->notifyBufferSize )
-	{
-		//this->bufferCounter = 0;
-		this->cv.notify_one();
-	}
-
-
+    //达到通知门限(整倍数)时发脉冲; 计数复用设备 _captureCounter, 无需额外累加器
+    //注意: 纯输出设备(无输入通道)时 _captureCounter 恒为0, 0%N==0 恒真, 即每回调唤醒一次,
+    //      配合按消费量补充输出, 该行为无碍(纯输出本就按回调节奏补齐即可)
+    unsigned notifyBuffers = (unsigned)(dev->notifyFrames / dev->deviceFrameSize);
+    auto cc = dev->_captureCounter.load(std::memory_order_relaxed);
+    if (cc % notifyBuffers == 0)
+    {
+        if (this->hNotify != INVALID_HANDLE_VALUE)
+        {
+            SetEvent(this->hNotify);   //单脉冲唤醒(自动复位事件), 工作量由计数器决定, 事件合并无碍
+        }
+    }
 }
 
 STAType ASIODriver::driverOpen()
 {
+    auto future = this->staWorker.submit(
+        [this] {
+            return this->pAsioDevice->deviceInit();
+        });
 
-	auto future = this->staWorker.submit(
-					[this] {
-					return this->pAsioDevice->deviceInit();
-					});
+    auto result = future.get();
+    if (!result)
+    {
+        return result;
+    }
 
-	auto result = future.get();
-	if (!result)
-	{
-		return result;
-	}
-
-	auto sampleRate = this->pAsioDevice->sampleRate;
-
-
-	return {};
+    return {};
 }
 
 STAType ASIODriver::createBuffer()
 {
-	auto future = this->staWorker.submit(
-		[this] {
-			return this->pAsioDevice->createBuffer();
-		});
+    auto future = this->staWorker.submit(
+        [this] {
+            return this->pAsioDevice->createBuffer();
+        });
 
-	return future.get();
+    return future.get();
 }
 
 STAType ASIODriver::start()
 {
-	auto future = this->staWorker.submit(
-		[this] {
-			return this->pAsioDevice->start();
-		});
+    if (this->processFlag.load())
+    {
+        return {};  //已启动
+    }
+    if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
+    {
+        return std::unexpected("缓冲区未创建");
+    }
 
-	STAType result = future.get();
-	if (!result)
-	{
-		return result;
-	}
+    this->processFlag.store(true);
+    if (this->hExit != INVALID_HANDLE_VALUE)
+    {
+        ResetEvent(this->hExit);   //清除上次stop残留
+    }
 
-	// if (this->fu.valid() == false)
-	// {
-	// 	this->processFlag = true;
-	// 	this->fu = std::async(std::launch::async, &ASIODriver::processor, this);
-	// }
+    //===== 外部串行初始化(不在引擎线程执行, 初始化完成后再启动线程) =====
+    this->pAsioDevice->resetCounters();
+    int notifyFrames = this->pAsioDevice->notifyFrames;
+    int bitDepth = this->pAsioDevice->bitDepth;
+    int mixLen = this->pAsioDevice->outputLimitFrames > this->pAsioDevice->notifyFrames
+        ? this->pAsioDevice->outputLimitFrames : this->pAsioDevice->notifyFrames;
+    this->_ioTemp.resize((size_t)notifyFrames * bitDepth);
+    this->_mixBuf.resize(mixLen);
+    this->_tmpBuf.resize(mixLen);
+    this->_oConvert.resize((size_t)mixLen * bitDepth);
+    this->iReadPos = 0;
+    this->lastRenderReadPos = 0;
+    {
+        std::lock_guard<std::mutex> lk(this->mtx);
+        this->chViews = this->buildView();
+        this->prefillOutput(*this->chViews);   //驱动启动前预填, 建立可控的起始播放延迟
+    }
 
-	return STAType();
+    //===== 启动引擎线程 =====
+    if (this->hThread == INVALID_HANDLE_VALUE)
+    {
+        auto th = _beginthreadex(nullptr, 0, &ASIODriver::threadProc, this, 0, nullptr);
+        if (th == 0)
+        {
+            this->processFlag.store(false);
+            return std::unexpected("创建引擎线程失败");
+        }
+        this->hThread = reinterpret_cast<HANDLE>(th);
+        //引擎线程优先级: 高于普通, 保证及时处理; 不用TIME_CRITICAL, 避免与音频回调线程竞争饿死
+        SetThreadPriority(this->hThread, THREAD_PRIORITY_HIGHEST);
+    }
+
+    //===== 启动底层驱动(回调开始后, 引擎通过通知门限被唤醒) =====
+    auto future = this->staWorker.submit(
+        [this] {
+            return this->pAsioDevice->start();
+        });
+    return future.get();
 }
 
 STAType ASIODriver::stop()
 {
-	auto future = this->staWorker.submit(
-		[this] {
-			return this->pAsioDevice->stop();
-		});
+    //1. 停止引擎线程
+    if (this->processFlag.exchange(false))
+    {
+        if (this->hNotify != INVALID_HANDLE_VALUE) SetEvent(this->hNotify);
+        if (this->hExit != INVALID_HANDLE_VALUE) SetEvent(this->hExit);
+        if (this->hThread != INVALID_HANDLE_VALUE)
+        {
+            WaitForSingleObject(this->hThread, INFINITE);
+            CloseHandle(this->hThread);
+            this->hThread = INVALID_HANDLE_VALUE;
+        }
+    }
 
-	return future.get();
+    //2. 停止底层驱动
+    if (this->pAsioDevice != nullptr)
+    {
+        auto future = this->staWorker.submit(
+            [this] {
+                return this->pAsioDevice->stop();
+            });
+        return future.get();
+    }
+    return {};
 }
 
 STAType ASIODriver::setChannelMask(unsigned inputMask, unsigned outputMask)
 {
-	return this->pAsioDevice->setChannelMask(inputMask, outputMask);
+    return this->pAsioDevice->setChannelMask(inputMask, outputMask);
 }
 
 TResult<int> ASIODriver::getSampleRate()
 {
     auto future = this->staWorker.submit(
-		[this] {
-			return this->pAsioDevice->getSampleRate();
-		});
-	auto result = future.get();
-	if (!result)
-	{
-		return std::unexpected(result.error());
-	}
+        [this] {
+            return this->pAsioDevice->getSampleRate();
+        });
+    auto result = future.get();
+    if (!result)
+    {
+        return std::unexpected(result.error());
+    }
 
-	return this->pAsioDevice->sampleRate;
+    return this->pAsioDevice->sampleRate;
 }
 
 TResult<void> ASIODriver::setSampleRate(long sampleRate)
 {
     auto future = this->staWorker.submit(
-		[this, sampleRate] {
-			return this->pAsioDevice->setSampleRate(sampleRate);
-		});
+        [this, sampleRate] {
+            return this->pAsioDevice->setSampleRate(sampleRate);
+        });
 
-	return future.get();
+    return future.get();
 }
 
 int ASIODriver::getCaptureCount()
@@ -645,133 +859,119 @@ int ASIODriver::getRenderCount()
     return this->pAsioDevice->outputChannels.size();
 }
 
+ASIODriver::ASIODiagnostics ASIODriver::getDiagnostics() const
+{
+    ASIODiagnostics d;
+    d.inputDroppedFrames = this->_inputDroppedFrames.load(std::memory_order_relaxed);
+    d.outputFullFrames = this->_outputFullFrames.load(std::memory_order_relaxed);
+    d.outputUnderrunFrames = this->pAsioDevice ? this->pAsioDevice->getOutputUnderrunFrames() : 0;
+    d.processUs = this->_procUs.load(std::memory_order_relaxed);
+    d.processCount = this->_procCount.load(std::memory_order_relaxed);
+    return d;
+}
+
 std::string ASIODriver::getCaptureName(int channel)
 {
-    if(channel < 0 || channel >= this->pAsioDevice->inputChannels.size())
-	{
-		return std::string();
-	}
+    if (channel < 0 || channel >= (int)this->pAsioDevice->inputChannels.size())
+    {
+        return std::string();
+    }
 
-	return this->pAsioDevice->inputChannels[channel].name;
+    return this->pAsioDevice->inputChannels[channel].name;
 }
 
 std::string ASIODriver::getRenderName(int channel)
 {
-    if(channel < 0 || channel >= this->pAsioDevice->outputChannels.size())
-	{
-		return std::string();
-	}
+    if (channel < 0 || channel >= (int)this->pAsioDevice->outputChannels.size())
+    {
+        return std::string();
+    }
 
-	return this->pAsioDevice->outputChannels[channel].name;	
+    return this->pAsioDevice->outputChannels[channel].name;
 }
 
 TResult<void> ASIODriver::Initialize(unsigned inputMask, unsigned outputMask)
 {
-	auto result = this->pAsioDevice->setChannelMask(inputMask, outputMask);
-	if(!result)
-	{
-		return result;
-	}
-	result = this->createBuffer();
-
-
-	// if(this->hThread == INVALID_HANDLE_VALUE)
-	// {
-	// 	auto threadHandle = _beginthreadex(nullptr, 0, &ASIODriver::threadProc, this, 0, nullptr);
-	// 	if(threadHandle == 0)
-	// 	{
-	// 		return std::unexpected("Failed to create thread");
-	// 	}
-	// 	this->hThread = reinterpret_cast<HANDLE>(threadHandle);
-	// }
-
+    auto result = this->pAsioDevice->setChannelMask(inputMask, outputMask);
+    if (!result)
+    {
+        return result;
+    }
+    result = this->createBuffer();
     return result;
 }
 
 TResult<void> ASIODriver::Release()
 {
-    return TResult<void>();
+    auto result = this->stop();
+    return result;
 }
 
-std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid)
+std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills)
 {
+    lock_guard<mutex> lg(gMTX);
 
-	lock_guard<mutex> lg(gMTX);
-	
-	//第一个空偏移
-	int offset = -1;
-	for (auto [index, entity] : views::enumerate(ASIOEntitys))
-	{
-		auto& pASIODriver = entity.pASIODriver;
-		if (pASIODriver != nullptr)
-		{
-			if (IsEqualCLSID(pASIODriver->asioID, clsid) == TRUE)
-			{
-				//pASIODriver->refCounter++;
-				//return pASIODriver.get();
-				return std::unexpected("不允许重复创建驱动");
-			}
-		}
-		else
-		{
-			if (offset == -1)
-			{
-				offset = index;
-			}
-		}
-	}
+    //第一个空偏移
+    int offset = -1;
+    for (auto [index, entity] : views::enumerate(ASIOEntitys))
+    {
+        auto& pASIODriver = entity.pASIODriver;
+        if (pASIODriver != nullptr)
+        {
+            if (IsEqualCLSID(pASIODriver->asioID, clsid) == TRUE)
+            {
+                return std::unexpected("不允许重复创建驱动");
+            }
+        }
+        else
+        {
+            if (offset == -1)
+            {
+                offset = index;
+            }
+        }
+    }
 
-	if (offset == -1)
-	{
-		return unexpected("can not support so much card"); //超过了最大支持的板卡数量)
-	}
+    if (offset == -1)
+    {
+        return unexpected("can not support so much card"); //超过了最大支持的板卡数量
+    }
 
-	auto& entity = ASIOEntitys[offset];
+    auto& entity = ASIOEntitys[offset];
 
-	auto pASIODriver = std::make_unique<ASIODriver>(&entity.callback, clsid);
-	
-	auto result = pASIODriver->driverOpen();
-	if (!result)
-	{
-		return std::unexpected(result.error());
-	}
+    auto pASIODriver = std::make_unique<ASIODriver>(&entity.callback, clsid, notifyMills, maxDelayMills);
 
+    auto result = pASIODriver->driverOpen();
+    if (!result)
+    {
+        return std::unexpected(result.error());
+    }
 
-	entity.pASIODriver = std::move(pASIODriver);
-	//entity.pASIODriver->refCounter++;  //新创建了驱动，引用计数+1
+    entity.pASIODriver = std::move(pASIODriver);
 
-
-
-
-	return entity.pASIODriver.get();
-
+    return entity.pASIODriver.get();
 }
 
 std::expected<void, std::string> ASIODriver::releaseDriver(ASIODriver* driver)
 {
-	if (driver == nullptr)
-	{
-		return unexpected("不能为空");
-	}
+    if (driver == nullptr)
+    {
+        return unexpected("不能为空");
+    }
 
+    lock_guard<mutex> lg(gMTX);
+    for (auto& entity : ASIOEntitys)
+    {
+        auto& pASIODriver = entity.pASIODriver;
+        if (pASIODriver != nullptr)
+        {
+            if (IsEqualCLSID(pASIODriver->asioID, driver->asioID) == TRUE)
+            {
+                pASIODriver.reset();//释放资源
+                return {};
+            }
+        }
+    }
 
-	lock_guard<mutex> lg(gMTX);
-	for (auto& entity : ASIOEntitys)
-	{
-		auto& pASIODriver = entity.pASIODriver;
-		if (pASIODriver != nullptr)
-		{
-			if (IsEqualCLSID(pASIODriver->asioID, driver->asioID) == TRUE)
-			{
-				//pASIODriver->refCounter--;
-				//if (pASIODriver->refCounter == 0)
-				{
-					pASIODriver.reset();//释放资源
-					return {};
-				}
-			}
-		}
-	}
-
-	return unexpected("没有匹配项目");
+    return unexpected("没有匹配项目");
 }

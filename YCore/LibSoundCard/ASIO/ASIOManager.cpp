@@ -31,8 +31,6 @@ static std::vector<ASIOInfo> getASIOInfos()
 	cr = RegOpenKeyA(HKEY_LOCAL_MACHINE, ASIO_PATH, &hkEnum);
 
 
-	void* handle = nullptr;
-
 	while (cr == ERROR_SUCCESS)
 	{
 		cr = RegEnumKeyA(hkEnum, index++, keyname, MAXDRVNAMELEN);
@@ -98,11 +96,11 @@ ASIOInfo* ASIOManager::operator[](unsigned index)
 	return &this->asioInfos[index];
 }
 
-TPResult<ASIOClient> ASIOManager::createClient(unsigned index)
+TPResult<ASIOClient> ASIOManager::createClient(unsigned index, int notifyMills, int maxDelayMills)
 {
 	ASIOInfo* info = this->getDeviceInfo(index);
 
-	auto result = ASIODriver::createDriver(info->clsid);
+	auto result = ASIODriver::createDriver(info->clsid, notifyMills, maxDelayMills);
 	if (result)
 	{
 		ASIODriver* driver = result.value();

@@ -1,6 +1,6 @@
 #pragma once
 #include<string>
-#include"TResult.h"
+#include"../../TResult.h"
 #include<memory>
 #include"../ICapture.h"
 #include"../IRender.h"
@@ -13,7 +13,7 @@ struct ASIOInfo
 
 
 class ASIODriver;
-//ASIO客户端，提供给外部调用的接口，负责与ASIODevice进行交互
+//ASIO客户端, 提供给外部调用的接口, 负责与ASIODriver进行交互
 class ASIOClient
 {
 public:
@@ -29,7 +29,7 @@ private:
 
 public:
 
-		//获取录音器数量
+	//获取录音器数量
 	int getCaptureCount();
 	//获取播放器数量
 	int getRenderCount();
@@ -45,8 +45,6 @@ public:
 
 public:
 
-	//virtual ~ASIOClient() = 0;
-
 	TResult<ICapture*> getCapture(std::initializer_list<int> lst);
 
 	TResult<IRender*> getRender(std::initializer_list<int> lst);
@@ -55,9 +53,6 @@ public:
 
 	TResult<void> Release();
 
-
-	//获取录制通道信息
-	//获取播放通道信息
 
 public:
 

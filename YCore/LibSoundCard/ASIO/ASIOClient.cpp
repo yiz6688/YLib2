@@ -1,19 +1,15 @@
 #include"ASIOClient.h"
-#include"BitConverter.h"
+#include"../../BitConverter.h"
 #include"ASIODriver.h"
 
 TResult<void> ASIOClient::init(CLSID clsid)
 {
     auto aa = ASIODriver::createDriver(clsid); //创建驱动
 
-    if(!aa)
+    if (!aa)
     {
         return std::unexpected(aa.error());  //返回失败。
     }
-
-
-
-
 
     return TResult<void>();
 }
@@ -58,12 +54,13 @@ TResult<IRender *> ASIOClient::getRender(std::initializer_list<int> lst)
     return this->pDriver->createRender(BitConverter::setBitIndex(lst));
 }
 
+//设置通道掩码(启动前, 只能设置一次)并创建缓冲区
 TResult<void> ASIOClient::Initialize(unsigned inputMask, unsigned outputMask)
 {
-    return TResult<void>();
+    return this->pDriver->Initialize(inputMask, outputMask);
 }
 
 TResult<void> ASIOClient::Release()
 {
-    return TResult<void>();
+    return this->pDriver->Release();
 }
