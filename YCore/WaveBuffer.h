@@ -168,6 +168,22 @@ public:
     template<typename F>
     int writeFloat(F* buffer, int sampleNum);
 
+    //交织整型/原始字节读写(类似 WaveRingBuffer, 内部格式与目标格式自动转换):
+    // 支持从任意内部格式(INT16/INT24/INT32/IEEE32/IEEE64)转换到目标采样格式
+    int readInt16(short* buffer, int nSample);      //交织读 -> int16
+    int writeInt16(short* buffer, int nSample);     //交织写 <- int16
+    int readInt24(int* buffer, int nSample);        //交织读 -> int32容器(24位范围)
+    int writeInt24(int* buffer, int nSample);       //交织写 <- int32容器(24位范围)
+    int readInt32(int* buffer, int nSample);        //交织读 -> int32(32位范围)
+    int writeInt32(int* buffer, int nSample);       //交织写 <- int32(32位范围)
+    int readInt24Bytes(char* buffer, int nSample);  //交织读 -> 3字节小端原始字节
+    int writeInt24Bytes(char* buffer, int nSample); //交织写 <- 3字节小端原始字节
+
+    //查询: 可读/可写采样点(帧 × 通道数), 容量(采样点)
+    int getReadableSample();
+    int getWriteableSample();
+    int getCapacity();
+
     std::span<char> getReadBuffer(int perChSize);
     int releaseReadBuffer();
 
@@ -320,6 +336,17 @@ private:
         return nFrames;
     }
 
+
+private:
+    //内部格式 -> 目标整型(逐通道去交织, stride=目标通道数, 定义于WaveBuffer.cpp)
+    void toInt16(char* src, short* dest, int nFrames, int chnIndex, int stride);
+    void fromInt16(short* src, char* dest, int nFrames, int chnIndex, int stride);
+    void toInt24(char* src, int* dest, int nFrames, int chnIndex, int stride);
+    void fromInt24(int* src, char* dest, int nFrames, int chnIndex, int stride);
+    void toInt32(char* src, int* dest, int nFrames, int chnIndex, int stride);
+    void fromInt32(int* src, char* dest, int nFrames, int chnIndex, int stride);
+    void toInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride);
+    void fromInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride);
 
 
 private:

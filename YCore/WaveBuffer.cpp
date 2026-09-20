@@ -1,6 +1,10 @@
 ﻿#include "WaveBuffer.h"
 #include<limits>
 #include<stdexcept>
+#include<bit>
+#include<cmath>
+#include<algorithm>
+#include<cstring>
 
 WaveBuffer::WaveBuffer(SampleType type, int sampleLen, int channelNum)
     :_type{type}, _chnNum{ channelNum}
@@ -27,18 +31,15 @@ WaveBuffer::WaveBuffer(SampleType type, int sampleLen, int channelNum)
         break;
     }
 
-    this->_frameSize = this->_chnNum * this->_byteDepth; //帧大小
-    //环形缓冲区内部已通过 _max_size = _cap_aligned - _gap 处理 gap 哨兵,
-    //这里直接按 sampleLen * frameSize 申请即可。实际可用帧数为
-    //_cap_aligned/_frameSize - 1(恰好对齐 2 的幂时为 sampleLen-1,其余情况 >= sampleLen)
-    long long bufferSize64 = static_cast<long long>(sampleLen);
-    bufferSize64 *= this->_frameSize;
-    if (bufferSize64 <= 0 || bufferSize64 > static_cast<long long>(std::numeric_limits<int>::max()))
+    this->_frameSize = this->_chnNum * this->_byteDepth; //帧大小(字节, 可为任意值如 INT24=3)
+    //按帧管理: 帧数量取 2 的幂次(至少 sampleLen+1, 保留一帧哨兵), 门限精确限制为 sampleLen 帧
+    if (static_cast<long long>(sampleLen) + 1 > (1LL << 31))
     {
-        throw std::invalid_argument("缓冲区大小超出范围");
+        throw std::invalid_argument("缓冲区帧数超出范围");
     }
-    int bufferSize = static_cast<int>(bufferSize64);
-    this->_pRing = std::make_unique<ByteRing>(static_cast<unsigned>(bufferSize), this->_frameSize);
+    unsigned frameCount = std::bit_ceil(static_cast<unsigned>(sampleLen) + 1);
+    this->_pRing = std::make_unique<ByteRing>(frameCount, static_cast<unsigned>(this->_frameSize));
+    this->_pRing->setLimit(static_cast<unsigned>(sampleLen)); //门限: 有效可用空间恰好 sampleLen 帧
 }
 
 WaveBuffer::~WaveBuffer()
@@ -471,4 +472,774 @@ int WaveBuffer::writeChannelsBytes(const std::vector<ChannelBytes>& channels)
     }
     return static_cast<int>(done);
 }
+
+//=============================================================================
+// 交织整型/原始字节读写(类似 WaveRingBuffer, 内部格式自动转换)
+// 说明: nSample 为总采样数(交织, = 帧数 × 通道数); 返回实际读写的采样数
+//=============================================================================
+
+int WaveBuffer::readInt16(short* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int rdFrames = 0;
+    while (rdFrames < frames)
+    {
+        int byteSize = (frames - rdFrames) * this->_frameSize;
+        auto buf = this->_pRing->getReadBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->toInt16(buf.data(), buffer + static_cast<long>(rdFrames) * this->_chnNum + ch,
+                nFrames, ch, this->_chnNum);
+        }
+        rdFrames += nFrames;
+        this->_pRing->releaseReadBuffer();
+    }
+    return rdFrames * this->_chnNum;
+}
+
+int WaveBuffer::writeInt16(short* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int wrFrames = 0;
+    while (wrFrames < frames)
+    {
+        int byteSize = (frames - wrFrames) * this->_frameSize;
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->fromInt16(buffer + static_cast<long>(wrFrames) * this->_chnNum + ch,
+                buf.data(), nFrames, ch, this->_chnNum);
+        }
+        wrFrames += nFrames;
+        this->_pRing->releaseWriteBuffer();
+    }
+    return wrFrames * this->_chnNum;
+}
+
+int WaveBuffer::readInt24(int* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int rdFrames = 0;
+    while (rdFrames < frames)
+    {
+        int byteSize = (frames - rdFrames) * this->_frameSize;
+        auto buf = this->_pRing->getReadBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->toInt24(buf.data(), buffer + static_cast<long>(rdFrames) * this->_chnNum + ch,
+                nFrames, ch, this->_chnNum);
+        }
+        rdFrames += nFrames;
+        this->_pRing->releaseReadBuffer();
+    }
+    return rdFrames * this->_chnNum;
+}
+
+int WaveBuffer::writeInt24(int* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int wrFrames = 0;
+    while (wrFrames < frames)
+    {
+        int byteSize = (frames - wrFrames) * this->_frameSize;
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->fromInt24(buffer + static_cast<long>(wrFrames) * this->_chnNum + ch,
+                buf.data(), nFrames, ch, this->_chnNum);
+        }
+        wrFrames += nFrames;
+        this->_pRing->releaseWriteBuffer();
+    }
+    return wrFrames * this->_chnNum;
+}
+
+int WaveBuffer::readInt32(int* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int rdFrames = 0;
+    while (rdFrames < frames)
+    {
+        int byteSize = (frames - rdFrames) * this->_frameSize;
+        auto buf = this->_pRing->getReadBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->toInt32(buf.data(), buffer + static_cast<long>(rdFrames) * this->_chnNum + ch,
+                nFrames, ch, this->_chnNum);
+        }
+        rdFrames += nFrames;
+        this->_pRing->releaseReadBuffer();
+    }
+    return rdFrames * this->_chnNum;
+}
+
+int WaveBuffer::writeInt32(int* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int wrFrames = 0;
+    while (wrFrames < frames)
+    {
+        int byteSize = (frames - wrFrames) * this->_frameSize;
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->fromInt32(buffer + static_cast<long>(wrFrames) * this->_chnNum + ch,
+                buf.data(), nFrames, ch, this->_chnNum);
+        }
+        wrFrames += nFrames;
+        this->_pRing->releaseWriteBuffer();
+    }
+    return wrFrames * this->_chnNum;
+}
+
+int WaveBuffer::readInt24Bytes(char* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int stride = this->_chnNum * 3;   //交织24位, 每帧字节数
+    int rdFrames = 0;
+    while (rdFrames < frames)
+    {
+        int byteSize = (frames - rdFrames) * this->_frameSize;
+        auto buf = this->_pRing->getReadBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->toInt24Bytes(buf.data(), buffer + static_cast<long>(rdFrames) * stride,
+                nFrames, ch, stride);
+        }
+        rdFrames += nFrames;
+        this->_pRing->releaseReadBuffer();
+    }
+    return rdFrames * this->_chnNum;
+}
+
+int WaveBuffer::writeInt24Bytes(char* buffer, int nSample)
+{
+    if (buffer == nullptr || nSample <= 0 || this->_chnNum <= 0)
+    {
+        return 0;
+    }
+    int frames = nSample / this->_chnNum;
+    if (frames <= 0)
+    {
+        return 0;
+    }
+    int stride = this->_chnNum * 3;   //交织24位, 每帧字节数
+    int wrFrames = 0;
+    while (wrFrames < frames)
+    {
+        int byteSize = (frames - wrFrames) * this->_frameSize;
+        auto buf = this->_pRing->getWriteBuffer(byteSize);
+        if (buf.size() == 0)
+        {
+            break;
+        }
+        int nFrames = buf.size() / this->_frameSize;
+        for (int ch = 0; ch < this->_chnNum; ch++)
+        {
+            this->fromInt24Bytes(buffer + static_cast<long>(wrFrames) * stride,
+                buf.data(), nFrames, ch, stride);
+        }
+        wrFrames += nFrames;
+        this->_pRing->releaseWriteBuffer();
+    }
+    return wrFrames * this->_chnNum;
+}
+
+int WaveBuffer::getReadableSample()
+{
+    return static_cast<int>(this->_pRing->getReadableFrames() * this->_chnNum);
+}
+
+int WaveBuffer::getWriteableSample()
+{
+    return static_cast<int>(this->_pRing->getWriteableFrames() * this->_chnNum);
+}
+
+int WaveBuffer::getCapacity()
+{
+    return static_cast<int>(this->_pRing->getMaxFrames() * this->_chnNum);
+}
+
+//=============================================================================
+// 内部格式 <-> 目标整型 逐通道转换
+//=============================================================================
+
+void WaveBuffer::toInt16(char* src, short* dest, int nFrames, int chnIndex, int stride)
+{
+    src = src + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = 0;
+            std::memcpy(&v, src, 2);
+            *dest = v;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;   //24位有符号 -> int16
+            *dest = static_cast<short>(v);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = static_cast<short>(v >> 16);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = static_cast<short>(std::round(std::clamp(v, -1.0f, 1.0f) * 32767.0f));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = 0;
+            std::memcpy(&v, src, 8);
+            *dest = static_cast<short>(std::round(std::clamp(v, -1.0, 1.0) * 32767.0));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::fromInt16(short* src, char* dest, int nFrames, int chnIndex, int stride)
+{
+    dest = dest + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            std::memcpy(dest, src, 2);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = *src;
+            dest[0] = static_cast<char>(v & 0xFF);
+            dest[1] = static_cast<char>((v >> 8) & 0xFF);
+            dest[2] = static_cast<char>((v >> 16) & 0xFF);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = static_cast<int>(*src) << 16;
+            std::memcpy(dest, &v, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = static_cast<float>(*src) / 32768.0f;
+            std::memcpy(dest, &v, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = static_cast<double>(*src) / 32768.0;
+            std::memcpy(dest, &v, 8);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::toInt24(char* src, int* dest, int nFrames, int chnIndex, int stride)
+{
+    src = src + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;   //24位有符号
+            *dest = v;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = 0;
+            std::memcpy(&v, src, 2);
+            *dest = static_cast<int>(v) << 8;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = v >> 8;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = static_cast<int>(std::round(std::clamp(v, -1.0f, 1.0f) * 8388607.0f));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = 0;
+            std::memcpy(&v, src, 8);
+            *dest = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 8388607.0));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::fromInt24(int* src, char* dest, int nFrames, int chnIndex, int stride)
+{
+    dest = dest + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = *src;
+            dest[0] = static_cast<char>(v & 0xFF);
+            dest[1] = static_cast<char>((v >> 8) & 0xFF);
+            dest[2] = static_cast<char>((v >> 16) & 0xFF);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = static_cast<short>(*src >> 8);
+            std::memcpy(dest, &v, 2);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = *src << 8;
+            std::memcpy(dest, &v, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = static_cast<float>(*src) / 8388608.0f;
+            std::memcpy(dest, &v, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = static_cast<double>(*src) / 8388608.0;
+            std::memcpy(dest, &v, 8);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::toInt32(char* src, int* dest, int nFrames, int chnIndex, int stride)
+{
+    src = src + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = v;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;
+            *dest = v << 8;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = 0;
+            std::memcpy(&v, src, 2);
+            *dest = static_cast<int>(v) << 16;
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = 0;
+            std::memcpy(&v, src, 4);
+            *dest = static_cast<int>(std::round(std::clamp(static_cast<double>(v), -1.0, 1.0) * 2147483647.0));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = 0;
+            std::memcpy(&v, src, 8);
+            *dest = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 2147483647.0));
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::fromInt32(int* src, char* dest, int nFrames, int chnIndex, int stride)
+{
+    dest = dest + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            std::memcpy(dest, src, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = *src >> 8;
+            dest[0] = static_cast<char>(v & 0xFF);
+            dest[1] = static_cast<char>((v >> 8) & 0xFF);
+            dest[2] = static_cast<char>((v >> 16) & 0xFF);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = static_cast<short>(*src >> 16);
+            std::memcpy(dest, &v, 2);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = static_cast<float>(*src) / 2147483648.0f;
+            std::memcpy(dest, &v, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = static_cast<double>(*src) / 2147483648.0;
+            std::memcpy(dest, &v, 8);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::toInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride)
+{
+    src = src + chnIndex * this->_byteDepth;
+    dest = dest + chnIndex * 3;
+    switch (this->_type)
+    {
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            dest[0] = src[0];
+            dest[1] = src[1];
+            dest[2] = src[2];
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            short v = 0;
+            std::memcpy(&v, src, 2);
+            int value = static_cast<int>(v) << 8;
+            dest[0] = static_cast<char>(value & 0xFF);
+            dest[1] = static_cast<char>((value >> 8) & 0xFF);
+            dest[2] = static_cast<char>((value >> 16) & 0xFF);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = 0;
+            std::memcpy(&v, src, 4);
+            int value = v >> 8;
+            dest[0] = static_cast<char>(value & 0xFF);
+            dest[1] = static_cast<char>((value >> 8) & 0xFF);
+            dest[2] = static_cast<char>((value >> 16) & 0xFF);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            float v = 0;
+            std::memcpy(&v, src, 4);
+            int value = static_cast<int>(std::round(std::clamp(v, -1.0f, 1.0f) * 8388607.0f));
+            dest[0] = static_cast<char>(value & 0xFF);
+            dest[1] = static_cast<char>((value >> 8) & 0xFF);
+            dest[2] = static_cast<char>((value >> 16) & 0xFF);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            double v = 0;
+            std::memcpy(&v, src, 8);
+            int value = static_cast<int>(std::round(std::clamp(v, -1.0, 1.0) * 8388607.0));
+            dest[0] = static_cast<char>(value & 0xFF);
+            dest[1] = static_cast<char>((value >> 8) & 0xFF);
+            dest[2] = static_cast<char>((value >> 16) & 0xFF);
+            src += this->_frameSize;
+            dest += stride;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void WaveBuffer::fromInt24Bytes(char* src, char* dest, int nFrames, int chnIndex, int stride)
+{
+    src = src + chnIndex * 3;
+    dest = dest + chnIndex * this->_byteDepth;
+    switch (this->_type)
+    {
+    case SampleType::INT24:
+        for (int i = 0; i < nFrames; i++)
+        {
+            dest[0] = src[0];
+            dest[1] = src[1];
+            dest[2] = src[2];
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT16:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;
+            short s = static_cast<short>(v >> 8);
+            std::memcpy(dest, &s, 2);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::INT32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;
+            int value = v << 8;
+            std::memcpy(dest, &value, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE32:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;
+            float f = static_cast<float>(v) / 8388608.0f;
+            std::memcpy(dest, &f, 4);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    case SampleType::IEEE64:
+        for (int i = 0; i < nFrames; i++)
+        {
+            int v = ((src[0] & 0xFF) << 8) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 24);
+            v >>= 8;
+            double d = static_cast<double>(v) / 8388608.0;
+            std::memcpy(dest, &d, 8);
+            src += stride;
+            dest += this->_frameSize;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 
