@@ -101,8 +101,8 @@ array<ASIOEntity, MAX_DRIVER_NUM> ASIOEntitys = registerCallbacks(std::make_inte
 static mutex gMTX;
 
 
-ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills, int maxDelayMills)
-    : asioID(clsid)
+ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
+    : asioID(clsid), exclusiveMode(exclusiveMode)
 {
     //notifyMills/maxDelayMills 有效范围由 ASIODevice 构造函数校验(超出抛异常)
     this->pAsioDevice = std::make_unique<ASIODevice>(callbacks, clsid, notifyMills, maxDelayMills);
@@ -174,6 +174,24 @@ std::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask
         return std::unexpected("通道掩码超出激活的输出通道");
     }
 
+    //独占模式: 每个输出通道只允许一个客户端(原子占用, 失败即已占用)
+    if (this->exclusiveMode)
+    {
+        unsigned cur = this->_claimedOutputChannels.load(std::memory_order_acquire);
+        while (true)
+        {
+            if (cur & (unsigned)channelMask)
+            {
+                return std::unexpected("独占模式下输出通道已被其他客户端占用");
+            }
+            if (this->_claimedOutputChannels.compare_exchange_weak(cur, cur | (unsigned)channelMask,
+                std::memory_order_acq_rel, std::memory_order_acquire))
+            {
+                break;
+            }
+        }
+    }
+
     ASIORender* pRender = new ASIORender(this, channelMask, bufferMills);
     return pRender;
 }
@@ -192,6 +210,24 @@ std::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMa
     if ((channelMask & inputMask) != channelMask)
     {
         return std::unexpected("通道掩码超出激活的输入通道");
+    }
+
+    //独占模式: 每个输入通道只允许一个客户端(原子占用, 失败即已占用)
+    if (this->exclusiveMode)
+    {
+        unsigned cur = this->_claimedInputChannels.load(std::memory_order_acquire);
+        while (true)
+        {
+            if (cur & (unsigned)channelMask)
+            {
+                return std::unexpected("独占模式下输入通道已被其他客户端占用");
+            }
+            if (this->_claimedInputChannels.compare_exchange_weak(cur, cur | (unsigned)channelMask,
+                std::memory_order_acq_rel, std::memory_order_acquire))
+            {
+                break;
+            }
+        }
     }
 
     ASIOCapture* pCapture = new ASIOCapture(this, channelMask, bufferMills);
@@ -274,6 +310,24 @@ void ASIODriver::removeClient(_Client2* client)
     //移入客户端GC: 缓冲仍需存活, 等引擎每轮结束清理时释放(旧视图引用不悬垂)
     this->gcClients.push_back(std::move(*it));
     this->clients.erase(it);
+
+    //独占模式: 释放该客户端占用的通道(原子归还)
+    if (this->exclusiveMode && !client->chs.empty())
+    {
+        unsigned mask = 0;
+        for (int ch : client->chs)
+        {
+            mask |= (1u << ch);
+        }
+        if (client->type == ASIOTrue)
+        {
+            this->_claimedInputChannels.fetch_and(~mask, std::memory_order_acq_rel);
+        }
+        else
+        {
+            this->_claimedOutputChannels.fetch_and(~mask, std::memory_order_acq_rel);
+        }
+    }
 
     //COW增量更新视图: 拷贝当前视图, 只移除被删客户端涉及的通道, 原子换新, 旧视图入GC
     if (auto* cur = this->chViews.load(std::memory_order_acquire))
@@ -538,7 +592,15 @@ void ASIODriver::processData(const _ChannelView& view, int inBatches)
     this->lastRenderReadPos = rpos;
     if (drained > 0)
     {
-        this->mixOutput(view, (int)drained * dev->deviceFrameSize);
+        int frames = (int)drained * dev->deviceFrameSize;
+        if (this->exclusiveMode)
+        {
+            this->copyOutputDirect(view, frames);   //独占: 免混频直拷
+        }
+        else
+        {
+            this->mixOutput(view, frames);          //共享: 浮点混频
+        }
     }
 }
 
@@ -651,12 +713,95 @@ int ASIODriver::mixOutput(const _ChannelView& view, int frames)
     return toWriteFrames;
 }
 
+/**
+ * 独占模式输出: 每通道至多一个客户端, 直接拷贝设备原始字节(免浮点转换/免混频/免限幅)
+ * 精确门限/不可覆盖语义与 mixOutput 一致, 返回实际写入帧数
+ */
+int ASIODriver::copyOutputDirect(const _ChannelView& view, int frames)
+{
+    auto& dev = this->pAsioDevice;
+    int iActive = dev->_iActiveNum;
+    int oActive = dev->_oActiveNum;
+    if (oActive == 0)
+    {
+        return 0;
+    }
+
+    auto rpos = dev->_renderReadPos.load(std::memory_order_acquire);
+    auto wpos = dev->_renderWritePos.load(std::memory_order_relaxed);
+    int inFlight = (int)(wpos - rpos);
+    int limitBuffers = dev->outputLimitFrames / dev->deviceFrameSize;
+    int wantBuffers = frames / dev->deviceFrameSize;
+    int toWriteBuffers = limitBuffers - inFlight;
+    if (toWriteBuffers > wantBuffers)
+    {
+        toWriteBuffers = wantBuffers;
+    }
+    if (toWriteBuffers <= 0)
+    {
+        this->_outputFullFrames.fetch_add((long long)wantBuffers * dev->deviceFrameSize, std::memory_order_relaxed);
+        return 0;
+    }
+    if (toWriteBuffers < wantBuffers)
+    {
+        this->_outputFullFrames.fetch_add((long long)(wantBuffers - toWriteBuffers) * dev->deviceFrameSize,
+            std::memory_order_relaxed);
+    }
+    int toWriteFrames = toWriteBuffers * dev->deviceFrameSize;
+
+    int bufferCount = dev->bufferCount;
+    int deviceByteSize = dev->deviceByteSize;
+    unsigned startSlot = (unsigned)(wpos & (unsigned)(bufferCount - 1));
+    int tailSlots = bufferCount - (int)startSlot;
+    int seg1 = tailSlots < toWriteBuffers ? tailSlots : toWriteBuffers;
+    int seg2 = toWriteBuffers - seg1;
+    int outBytes = toWriteFrames * dev->bitDepth;
+
+    for (int j = 0; j < oActive; j++)
+    {
+        auto& chView = view[iActive + j];
+        if (chView.wbs.size() == 1)
+        {
+            //单客户端: 直接拷贝设备原始字节(独占模式保证每通道至多一个)
+            int got = chView.wbs[0]->readBytes(this->_oConvert.data(), outBytes);
+            if (got < outBytes)
+            {
+                std::memset(this->_oConvert.data() + got, 0, outBytes - got);
+            }
+        }
+        else
+        {
+            //无客户端: 静音
+            std::memset(this->_oConvert.data(), 0, outBytes);
+        }
+
+        char* ring = dev->_cbBuffers[iActive + j]._buf;
+        std::memcpy(ring + (size_t)startSlot * deviceByteSize, this->_oConvert.data(),
+            (size_t)seg1 * deviceByteSize);
+        if (seg2 > 0)
+        {
+            std::memcpy(ring, this->_oConvert.data() + (size_t)seg1 * deviceByteSize,
+                (size_t)seg2 * deviceByteSize);
+        }
+    }
+
+    dev->_renderWritePos.fetch_add((unsigned)toWriteBuffers, std::memory_order_release);
+    return toWriteFrames;
+}
+
 //播放数据预填(驱动启动前调用, 建立可控的起始播放延迟)
 void ASIODriver::prefillOutput(const _ChannelView& view)
 {
     if (this->pAsioDevice->_oActiveNum > 0)
     {
-        this->mixOutput(view, this->pAsioDevice->outputLimitFrames);
+        if (this->exclusiveMode)
+        {
+            this->copyOutputDirect(view, this->pAsioDevice->outputLimitFrames);
+        }
+        else
+        {
+            this->mixOutput(view, this->pAsioDevice->outputLimitFrames);
+        }
     }
 }
 
@@ -916,7 +1061,7 @@ TResult<void> ASIODriver::Release()
     return result;
 }
 
-std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills)
+std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
 {
     lock_guard<mutex> lg(gMTX);
 
@@ -948,7 +1093,7 @@ std::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, in
 
     auto& entity = ASIOEntitys[offset];
 
-    auto pASIODriver = std::make_unique<ASIODriver>(&entity.callback, clsid, notifyMills, maxDelayMills);
+    auto pASIODriver = std::make_unique<ASIODriver>(&entity.callback, clsid, notifyMills, maxDelayMills, exclusiveMode);
 
     auto result = pASIODriver->driverOpen();
     if (!result)

@@ -47,7 +47,10 @@ class ASIODriver
 public:
     //notifyMills   : 通知时长(ms), 默认10ms, 有效范围10-50ms, 超出抛 std::invalid_argument
     //maxDelayMills : 最大延迟(ms), 默认0=自动(2*通知时长, 上限100ms, 硬件缓冲更大则以实际为准); 非0=显式覆盖
-    ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills = 10, int maxDelayMills = 0);
+    //exclusiveMode : 独占模式, 默认false=共享(每通道允许多客户端混频); true=独占(每通道只允许一个客户端,
+    //                输出免混频直拷性能更高), 初始化时指定, 不可更改
+    ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills = 10, int maxDelayMills = 0,
+        bool exclusiveMode = false);
     ~ASIODriver();
 
 public:
@@ -85,8 +88,10 @@ private:
     void cleanupGC();
     //处理数据: inBatches=输入整批数(0表示无可读输入), 输出按回调已消费量补充
     void processData(const _ChannelView& view, int inBatches);
-    //从播放客户端混频写入输出环形区(精确门限, 不可覆盖), 返回实际写入帧数
+    //从播放客户端混频写入输出环形区(精确门限, 不可覆盖, 共享模式), 返回实际写入帧数
     int mixOutput(const _ChannelView& view, int frames);
+    //独占模式输出: 每通道至多一个客户端, 直接拷贝设备原始字节(免浮点/免混频/免限幅)
+    int copyOutputDirect(const _ChannelView& view, int frames);
     //播放数据预填(驱动启动前由start串行调用, 建立可控的起始延迟)
     void prefillOutput(const _ChannelView& view);
     //float -> 设备采样格式字节
@@ -136,12 +141,17 @@ public:
 
 public:
     //创建驱动, notifyMills: 通知时长(ms), 默认10ms, 有效范围10-50ms; maxDelayMills: 0=自动
-    static std::expected<ASIODriver*, std::string> createDriver(CLSID clsid, int notifyMills = 10, int maxDelayMills = 0);
+    //exclusiveMode: 独占模式(每通道只允许一个客户端, 输出免混频直拷), 初始化指定不可更改
+    static std::expected<ASIODriver*, std::string> createDriver(CLSID clsid, int notifyMills = 10,
+        int maxDelayMills = 0, bool exclusiveMode = false);
     static std::expected<void, std::string> releaseDriver(ASIODriver* driver);
 
 public:
     //混频峰值限幅(防削波): 多客户端混频求和后峰值超过1.0时, 整块等比缩放
     bool mixPeakLimit = true;
+
+    //独占模式标志: 初始化时指定, 不可更改
+    const bool exclusiveMode;
 
     CLSID asioID;
 
@@ -175,6 +185,10 @@ public:
     unsigned iReadPos = 0;
     //上次输出读位置(引擎线程独占), 用于按回调已消费量补充输出, 与通知节奏解耦
     unsigned lastRenderReadPos = 0;
+
+    //独占模式通道占用表(位掩码, 初始化指定独占模式时启用, 创建/注销客户端时维护)
+    std::atomic<unsigned> _claimedInputChannels{ 0 };
+    std::atomic<unsigned> _claimedOutputChannels{ 0 };
 
     //诊断统计(引擎线程写, 查询线程读)
     std::atomic<long long> _inputDroppedFrames{ 0 };

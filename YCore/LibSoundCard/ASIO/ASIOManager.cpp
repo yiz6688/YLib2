@@ -96,11 +96,11 @@ ASIOInfo* ASIOManager::operator[](unsigned index)
 	return &this->asioInfos[index];
 }
 
-TPResult<ASIOClient> ASIOManager::createClient(unsigned index, int notifyMills, int maxDelayMills)
+TPResult<ASIOClient> ASIOManager::createClient(unsigned index, int notifyMills, int maxDelayMills, bool exclusiveMode)
 {
 	ASIOInfo* info = this->getDeviceInfo(index);
 
-	auto result = ASIODriver::createDriver(info->clsid, notifyMills, maxDelayMills);
+	auto result = ASIODriver::createDriver(info->clsid, notifyMills, maxDelayMills, exclusiveMode);
 	if (result)
 	{
 		ASIODriver* driver = result.value();
