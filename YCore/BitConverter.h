@@ -38,7 +38,7 @@ public:
 		return result;
 	}
 
-	unsigned setBitIndex(const std::vector<int>& inxs) {
+	static unsigned setBitIndex(const std::vector<int>& inxs) {
 		unsigned value = 0;
 		for (unsigned i : inxs) 
 			value |= (1u << i);

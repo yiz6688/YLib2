@@ -7,28 +7,29 @@
 #include<limits>
 #include<stdexcept>
 #include<type_traits>
+#include<cstdint>
 
 /**
-*环形缓冲区类(按帧管理)
-* 1、支持单生产者单消费者 无锁读写
-* 2、任一时刻，可读帧数+可写帧数 = 最大可用帧数(_maxFrames)
+*环形缓冲区类(可覆盖 / overwrite)
+* 1、支持单生产者单消费者 无锁读写, 写侧永不阻塞
+* 2、写快读慢时, 新数据覆盖最旧数据; 读侧检测到落后超过一个容量时快进, 丢弃已被覆盖的帧
 * 3、帧(frame): 大小为 T 的整数倍(字节), 是读写的基本单位, 所有读写方法都要求帧对齐
-* 4、帧数量(_frameCount) 必须为 2 的幂次: 位置按帧计数, 直接取模即可利用无符号回绕
-* 5、最大可用帧数(_maxFrames, 门限) 可精确控制, 默认 _frameCount(空间可用满);
-*    位置单调计数, 空/满由可读帧数为 0 / 达到门限区分
+* 4、帧数量(_frameCount) 必须为 2 的幂次, 帧索引用 mask 取模
+* 5、位置为 uint64 无限递增的原子计数(write_pos/read_pos), 覆盖效果通过读侧
+*    "写-读 > 帧数量则快进" 实现, 无符号回绕下差值恒精确
 */
 template<typename T=char>
-class RingBuffer2
+class RingBuffer3
 {
 
 private:
-	using TYPE1 = unsigned;	
+	using TYPE1 = uint64_t;
 
-	static_assert(std::is_trivially_copyable_v<T>, "RingBuffer2 仅支持平凡可拷贝类型(T), 内部按字节拷贝");
+	static_assert(std::is_trivially_copyable_v<T>, "RingBuffer3 仅支持平凡可拷贝类型(T), 内部按字节拷贝");
 
 public:
 	//内部申请空间: frameCount 为帧数量(2 的幂次), frameSize 为帧大小(字节, sizeof(T) 的整数倍)
-	RingBuffer2(unsigned frameCount, unsigned frameSize = sizeof(T))
+	RingBuffer3(unsigned frameCount, unsigned frameSize = sizeof(T))
         : _frameCount{ frameCount }, _frameSize{ frameSize }
     {
         this->_initCommon();
@@ -38,7 +39,7 @@ public:
 	//使用外部 char* 空间包装(按字节缓冲区传入, 约束一致); T=char 时与 T* 构造重合, 只提供 T* 版本
 	//read/write(字节拷贝)无对齐要求; 但 getReadBuffer/getWriteBuffer 返回 span<T>, 直接按 T 类型访问时
 	//外部缓冲区仍需按 alignof(T) 对齐
-	RingBuffer2(char* buffer, unsigned frameCount, unsigned frameSize = sizeof(T))
+	RingBuffer3(char* buffer, unsigned frameCount, unsigned frameSize = sizeof(T))
         requires (std::is_same_v<T, char> == false)
         : _frameCount{ frameCount }, _frameSize{ frameSize }, _buffer(), _ptr{ reinterpret_cast<T*>(buffer) }
     {
@@ -49,7 +50,7 @@ public:
         this->_initCommon();
     }
 	//使用外部 T* 空间包装(帧大小约束一致)
-	RingBuffer2(T* buffer, unsigned frameCount, unsigned frameSize = sizeof(T))
+	RingBuffer3(T* buffer, unsigned frameCount, unsigned frameSize = sizeof(T))
         : _frameCount{ frameCount }, _frameSize{ frameSize }, _buffer(), _ptr{ buffer }
     {
         if(buffer == nullptr)
@@ -59,19 +60,18 @@ public:
         this->_initCommon();
     }
 
-	~RingBuffer2()
+	~RingBuffer3()
     {
         this->_ptr = nullptr;
     }
 
-	RingBuffer2(RingBuffer2&& value) noexcept
+	RingBuffer3(RingBuffer3&& value) noexcept
     {
         this->_frameCount = value._frameCount;
         this->_frameSize = value._frameSize;
         this->_elemsPerFrame = value._elemsPerFrame;
         this->_capacity = value._capacity;
         this->_mask = value._mask;
-        this->_maxFrames = value._maxFrames;
         this->_buffer = std::move(value._buffer);
         this->_ptr = value._ptr;
         this->write_pos.store(value.write_pos.load());
@@ -81,7 +81,7 @@ public:
         this->read_lock_len = value.read_lock_len;
     }
 
-	RingBuffer2& operator=(RingBuffer2&& value) noexcept
+	RingBuffer3& operator=(RingBuffer3&& value) noexcept
     {
         if (&value == this)
         {
@@ -92,7 +92,6 @@ public:
         this->_elemsPerFrame = value._elemsPerFrame;
         this->_capacity = value._capacity;
         this->_mask = value._mask;
-        this->_maxFrames = value._maxFrames;
         this->_buffer = std::move(value._buffer);
         this->_ptr = value._ptr;
         this->write_pos.store(value.write_pos.load());
@@ -102,28 +101,8 @@ public:
         return *this;
     }
 
-	//设置最大可用帧数(门限): 必须大于 0 且不超过 _frameCount(位置单调计数, 空间可用满)
-	void setLimit(TYPE1 limit)
-    {
-        if(limit <= 0)
-        {
-            throw std::runtime_error("limit 必须大于 0");
-        }
-        if(limit > this->_frameCount)
-        {
-            throw std::runtime_error("limit 不能超过帧数量");
-        }
-        auto wpos = this->write_pos.load(std::memory_order_relaxed);
-        auto rpos = this->read_pos.load(std::memory_order_acquire);
-        if(limit < this->calcReadableFrames(wpos, rpos))
-        {
-            throw std::runtime_error("limit 不能小于当前未读帧数");
-        }
-        this->_maxFrames = limit;
-    }
 
-
-	//从环形缓冲区读取数据, 帧对齐(不足一帧的部分被截断), 返回读出的 T 元素数
+	//从环形缓冲区读取数据(覆盖模式: 若写侧已覆盖最旧数据则快进跳过), 帧对齐, 返回读出的 T 元素数
 	int read(T* buffer, int size)
     {
         return this->read(buffer, 0, size);
@@ -146,23 +125,30 @@ public:
         auto wpos = this->write_pos.load(std::memory_order_acquire);
         auto rpos = this->read_pos.load(std::memory_order_relaxed);
 
-        auto readableFrames = this->calcReadableFrames(wpos, rpos); //可读帧数
-        if(readableFrames == 0)
+        //覆盖处理: 写-读超过帧数量时, 最旧帧已被覆盖, 快进到最新帧数量起点
+        auto avail = wpos - rpos;
+        if(avail > this->_frameCount)
+        {
+            rpos = wpos - this->_frameCount;
+            this->read_pos.store(rpos, std::memory_order_relaxed);
+            avail = this->_frameCount;
+        }
+        if(avail == 0)
         {
             return 0;
         }
         TYPE1 wantFrames = static_cast<TYPE1>(size) / this->_elemsPerFrame;
-        if(readableFrames > wantFrames)
+        if(avail > wantFrames)
         {
-            readableFrames = wantFrames;
+            avail = wantFrames;
         }
 
         auto readPos = rpos & this->_mask; //帧索引
         auto readElem = readPos * this->_elemsPerFrame; //元素偏移
 
         auto tailFrames = this->_frameCount - readPos; //读指针到尾部的帧数
-        auto size1 = std::min(tailFrames, readableFrames); //第一段: 尾部整段
-        auto size2 = readableFrames - size1;              //第二段: 回绕到头部
+        auto size1 = std::min(tailFrames, avail);      //第一段: 尾部整段
+        auto size2 = avail - size1;                    //第二段: 回绕到头部
 
         std::memcpy(buffer + offset, this->_ptr + readElem, size1 * this->_elemsPerFrame * sizeof(T));
 
@@ -172,14 +158,14 @@ public:
             std::memcpy(buffer + offset, this->_ptr, size2 * this->_elemsPerFrame * sizeof(T));
         }
 
-        rpos += readableFrames;
-        this->read_pos.store(rpos, std::memory_order_release);
+        rpos += avail;
+        this->read_pos.store(rpos, std::memory_order_relaxed);
 
-        return static_cast<int>(readableFrames * this->_elemsPerFrame);
+        return static_cast<int>(avail * this->_elemsPerFrame);
     }
 
 
-	//写入环形缓冲区, 帧对齐(不足一帧的部分被截断), 返回写入的 T 元素数
+	//写入环形缓冲区(覆盖模式: 永不阻塞, 空间不足时覆盖最旧数据), 帧对齐, 返回写入的 T 元素数
 	int write(const T* data, int size)
     {
         return this->write(data, 0, size);
@@ -199,26 +185,21 @@ public:
             return 0;
         }
 
-        auto wpos = this->write_pos.load(std::memory_order_relaxed);
-        auto rpos = this->read_pos.load(std::memory_order_acquire);
-
-        auto writeableFrames = this->calcWriteableFrames(wpos, rpos); //可写帧数
-        if(writeableFrames == 0)
-        {
-            return 0;
-        }
+        //覆盖模式: 一次最多写满整个缓冲区, 写侧从不因读侧而阻塞
         TYPE1 wantFrames = static_cast<TYPE1>(size) / this->_elemsPerFrame;
-        if(writeableFrames > wantFrames)
+        if(wantFrames > this->_frameCount)
         {
-            writeableFrames = wantFrames;
+            wantFrames = this->_frameCount;
         }
+
+        auto wpos = this->write_pos.load(std::memory_order_relaxed);
 
         auto writePos = wpos & this->_mask; //帧索引
         auto writeElem = writePos * this->_elemsPerFrame; //元素偏移
 
         auto tailFrames = this->_frameCount - writePos; //写指针到尾部的帧数
-        auto size1 = std::min(tailFrames, writeableFrames); //第一段: 尾部整段
-        auto size2 = writeableFrames - size1;              //第二段: 回绕到头部
+        auto size1 = std::min(tailFrames, wantFrames);  //第一段: 尾部整段
+        auto size2 = wantFrames - size1;                //第二段: 回绕到头部
 
         std::memcpy(this->_ptr + writeElem, data + offset, size1 * this->_elemsPerFrame * sizeof(T));
 
@@ -228,14 +209,14 @@ public:
             std::memcpy(this->_ptr, data + offset, size2 * this->_elemsPerFrame * sizeof(T)); //从头部开始写
         }
 
-        wpos += writeableFrames; //修正写指针(帧)
+        wpos += wantFrames; //修正写指针(帧)
         this->write_pos.store(wpos, std::memory_order::release);
 
-        return static_cast<int>(writeableFrames * this->_elemsPerFrame);
+        return static_cast<int>(wantFrames * this->_elemsPerFrame);
     }
 
 	//从另一个环形缓冲区读
-	int readFrom(RingBuffer2& ring, int size)
+	int readFrom(RingBuffer3& ring, int size)
     {
         if (this == &ring || size <= 0)
         {
@@ -273,7 +254,7 @@ public:
     }
 
 	//写入到另一个环形缓冲区
-	int writeTo(RingBuffer2& ring, int size)
+	int writeTo(RingBuffer3& ring, int size)
     {
         return ring.readFrom(*this, size);
     }
@@ -293,17 +274,15 @@ public:
             return std::span<T>(wptr, 0);
         }
 
-        auto rpos = this->read_pos.load(std::memory_order_acquire);
-
-        auto writeableFrames = this->calcWriteableFrames(wpos, rpos); //计算剩余可写帧数
+        //覆盖模式: 一次最多锁定整个缓冲区
         TYPE1 wantFrames = size / this->_elemsPerFrame;
-        if(writeableFrames > wantFrames)
+        if(wantFrames > this->_frameCount)
         {
-            writeableFrames = wantFrames;
+            wantFrames = this->_frameCount;
         }
 
         auto tailFrames = this->_frameCount - writePos; //写指针到尾部的帧数
-        this->write_lock_len = std::min(tailFrames, writeableFrames); //锁定不超过尾部, 避免回绕
+        this->write_lock_len = std::min(tailFrames, wantFrames); //锁定不超过尾部, 避免回绕
 
         //write_lock_len 为锁定帧数, span<T> 按 T 元素计数
         return std::span<T>(wptr, this->write_lock_len * this->_elemsPerFrame);
@@ -345,30 +324,40 @@ public:
 
 	std::span<T> getReadBuffer(TYPE1 size)
     {
-        auto rpos = this->read_pos.load(std::memory_order_relaxed);
-
-        auto readPos = rpos & this->_mask; //帧索引
-        auto rptr = this->_ptr + readPos * this->_elemsPerFrame; //读指针起始位置
-
         //帧对齐: 向下取整到整帧
         size = (size / this->_elemsPerFrame) * this->_elemsPerFrame;
 
         if(size == 0 || this->read_lock_len != 0)
         {
-            return std::span<T>(rptr, 0);
+            return std::span<T>(this->_ptr, 0);
         }
-        
-        auto wpos = this->write_pos.load(std::memory_order_acquire);
 
-        auto readableFrames = this->calcReadableFrames(wpos, rpos); //计算可读帧数
-        TYPE1 wantFrames = size / this->_elemsPerFrame;
-        if(readableFrames > wantFrames)
+        auto wpos = this->write_pos.load(std::memory_order_acquire);
+        auto rpos = this->read_pos.load(std::memory_order_relaxed);
+
+        //覆盖处理: 写-读超过帧数量时, 快进跳过已被覆盖的最旧帧
+        auto avail = wpos - rpos;
+        if(avail > this->_frameCount)
         {
-            readableFrames = wantFrames;
+            rpos = wpos - this->_frameCount;
+            this->read_pos.store(rpos, std::memory_order_relaxed);
+            avail = this->_frameCount;
         }
+        if(avail == 0)
+        {
+            return std::span<T>(this->_ptr, 0);
+        }
+        TYPE1 wantFrames = size / this->_elemsPerFrame;
+        if(avail > wantFrames)
+        {
+            avail = wantFrames;
+        }
+
+        auto readPos = rpos & this->_mask; //帧索引
+        auto rptr = this->_ptr + readPos * this->_elemsPerFrame; //读指针起始位置
 
         auto tailFrames = this->_frameCount - readPos; //读指针到尾部的帧数
-        this->read_lock_len = std::min(tailFrames, readableFrames); //锁定不超过尾部, 避免回绕
+        this->read_lock_len = std::min(tailFrames, avail); //锁定不超过尾部, 避免回绕
 
         //read_lock_len 为锁定帧数, span<T> 按 T 元素计数
         return std::span<T>(rptr, this->read_lock_len * this->_elemsPerFrame);
@@ -398,7 +387,7 @@ public:
         rpos += releaseFrames;
 
         this->read_lock_len -= releaseFrames;
-        this->read_pos.store(rpos, std::memory_order_release);
+        this->read_pos.store(rpos, std::memory_order_relaxed);
         //releaseSize 为 T 元素数, 直接返回
         return static_cast<int>(releaseFrames * this->_elemsPerFrame);
     }
@@ -433,30 +422,16 @@ private:
         }
         this->_capacity = this->_frameCount * this->_elemsPerFrame;
         this->_mask = this->_frameCount - 1;
-        this->_maxFrames = this->_frameCount; //全部可用, 门限上限即帧数量
     }
-
-	TYPE1 calcReadableFrames(TYPE1 wpos, TYPE1 rpos)
-	{
-		//位置按帧单调递增, 差值即真实可读帧数(无符号回绕下仍精确, 只要差值 < 2^32);
-		//mask 仅用于帧索引计算, 这里不能取模, 否则满时(差值=帧数量)会误判为空
-		return wpos - rpos;
-	}
-
-	TYPE1 calcWriteableFrames(TYPE1 wpos, TYPE1 rpos)
-	{
-		auto readableFrames = this->calcReadableFrames(wpos, rpos);
-		return this->_maxFrames - readableFrames;
-	}
 
 
 public:
 
-	//清空
+	//清空(覆盖模式: 直接丢弃全部数据)
 	void reset()
 	{
-		this->read_pos.store(0, std::memory_order_release);
-		this->write_pos.store(0, std::memory_order_release);
+		this->read_pos.store(0, std::memory_order_relaxed);
+		this->write_pos.store(0, std::memory_order_relaxed);
 		this->write_lock_len = 0;
 		this->read_lock_len = 0;
 	}
@@ -465,30 +440,27 @@ public:
 
 	size_t getReadableBytes()
 	{
-		auto wpos = this->write_pos.load(std::memory_order_acquire);
-		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return static_cast<size_t>(this->calcReadableFrames(wpos, rpos)) * this->_elemsPerFrame;
+		return this->getReadableFrames() * this->_elemsPerFrame;
 	}
 
 	size_t getWriteableBytes()
 	{
-		auto wpos = this->write_pos.load(std::memory_order_acquire);
-		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return static_cast<size_t>(this->calcWriteableFrames(wpos, rpos)) * this->_elemsPerFrame;
+		//覆盖模式: 写侧恒可写满整个缓冲区(覆盖旧数据)
+		return static_cast<size_t>(this->_frameCount) * this->_elemsPerFrame;
 	}
 
 	size_t getReadableFrames()
 	{
 		auto wpos = this->write_pos.load(std::memory_order_acquire);
-		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return this->calcReadableFrames(wpos, rpos);
+		auto rpos = this->read_pos.load(std::memory_order_relaxed);
+		auto avail = wpos - rpos;
+		return avail > this->_frameCount ? this->_frameCount : static_cast<size_t>(avail);
 	}
 
 	size_t getWriteableFrames()
 	{
-		auto wpos = this->write_pos.load(std::memory_order_acquire);
-		auto rpos = this->read_pos.load(std::memory_order_acquire);
-		return this->calcWriteableFrames(wpos, rpos);
+		//覆盖模式: 写侧恒可写满整个缓冲区(覆盖旧数据)
+		return this->_frameCount;
 	}
 
 	size_t getCapacity()
@@ -506,11 +478,6 @@ public:
 		return this->_frameSize; //字节
 	}
 
-	size_t getMaxFrames()
-	{
-		return this->_maxFrames;
-	}
-
 
 
 
@@ -526,8 +493,6 @@ private:
 	unsigned _capacity;
 	//帧索引取余掩码 = _frameCount - 1
 	unsigned _mask;
-	//最大可用帧数(门限), <= _frameCount
-	unsigned _maxFrames;
 
 	//内部分配的空间
 	std::vector<T> _buffer;
@@ -545,4 +510,4 @@ private:
 
 };
 
-using ByteRing = RingBuffer2<>;
+using ByteRing3 = RingBuffer3<>;

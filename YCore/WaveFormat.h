@@ -41,6 +41,13 @@ enum class SampleType : int
     IEEE64    //64位浮点数
 };
 
+constexpr int getByteWitdh(SampleType type)
+{
+
+    return -1 ;
+}
+
+
 struct Chunk
 {
 
