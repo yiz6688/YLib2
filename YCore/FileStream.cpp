@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include "FileStream.h"
 #include<Windows.h>
 #include<iostream>
@@ -92,7 +92,7 @@ FileStream::~FileStream()
 }
 
 //底层关闭实现: 尽力 flush 落盘 + 关闭句柄, 返回 combined error(供 close() 抛异常 / 析构静默)
-exp_ns::expected<void, std::string> FileStream::inner_close()
+TResult<void> FileStream::inner_close()
 {
 	if (this->_hFile != INVALID_HANDLE_VALUE)
 	{

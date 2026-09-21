@@ -1,4 +1,5 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
+#include"TResult.h"
 #include"../ICapture.h"
 #include"../STAWorker.h"
 #include<Windows.h>
@@ -15,21 +16,21 @@ public:
 
 	STAType initSTA(std::string_view id);
 
-	exp_ns::expected<void, std::string> init(std::string_view id);
+	TResult<void> init(std::string_view id);
 
-	exp_ns::expected<void, std::string> release();
+	TResult<void> release();
 
-	exp_ns::expected<void, std::string> doCapture();
+	TResult<void> doCapture();
 
 	STAType readNextPacket();
 
-	exp_ns::expected<void, std::string> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
+	TResult<void> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
 
-	exp_ns::expected<void, std::string> waitCaptureDone() override;
+	TResult<void> waitCaptureDone() override;
 
-	exp_ns::expected<void, std::string> stopCapture() override;
+	TResult<void> stopCapture() override;
 
-	exp_ns::expected<void, std::string> capture(WaveWriter* waveWriter, int maxRecordMills) override;
+	TResult<void> capture(WaveWriter* waveWriter, int maxRecordMills) override;
 
 	CaptureState getCaptureState()
 	{

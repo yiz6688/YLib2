@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
+#include"TResult.h"
 #include<string>
 #include<vector>
 #include<stdexcept>
@@ -81,7 +82,7 @@ public:
 
 protected:
 	//底层关闭实现: 返回 expected, 供 close()(抛异常) 与 析构/移动赋值(静默) 复用
-	virtual exp_ns::expected<void, std::string> inner_close() = 0;
+	virtual TResult<void> inner_close() = 0;
 
 	//c++重载后，同名函数就不显示了，设计两个基本的读写函数，其余的调用这两个函数。
 	//基本写方法

@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
+#include"TResult.h"
 #include"../ICapture.h"
 #include"../../WaveBuffer.h"
 #include<vector>
@@ -26,13 +27,13 @@ public:
 
 
 public:
-    exp_ns::expected<void, std::string> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
+    TResult<void> captureAsync(WaveWriter* waveWriter, int maxRecordMills) override;
 
-    exp_ns::expected<void, std::string> waitCaptureDone() override;
+    TResult<void> waitCaptureDone() override;
 
-    exp_ns::expected<void, std::string> stopCapture() override;
+    TResult<void> stopCapture() override;
 
-    exp_ns::expected<void, std::string> capture(WaveWriter* waveWriter, int maxRecordMills) override;
+    TResult<void> capture(WaveWriter* waveWriter, int maxRecordMills) override;
 
     CaptureState getCaptureState()
     {

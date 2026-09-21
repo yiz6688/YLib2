@@ -3,6 +3,7 @@
 int main() { return 0; }
 #else
 #include"base_config.hpp"
+#include"TResult.h"
 #include"StreamTest.h"
 #include<vector>
 #include<array>
@@ -160,7 +161,7 @@ void threadFunc()
 
 }
 
-exp_ns::expected<int, std::string> func1(int x)
+TResult<int> func1(int x)
 {
 	println("input:{}", x);
 	if (x == 1)
@@ -600,7 +601,7 @@ int main()
 		or_else([](const std::string& err) 
 			{
 				println("error: {}", err); 
-				return exp_ns::expected<int, std::string>(3);
+				return TResult<int>(3);
 			}).
 		and_then([](int k)
 			{

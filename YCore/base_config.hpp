@@ -29,15 +29,23 @@
 #  include <format>
 #  include <span>
 #  include <bit>
+#  include <type_traits>
 #  define fmt_ns  std
 #  define span_ns std
-#  define exp_ns  std
+#  define exp_ns  ycore
+namespace ycore {
+// 统一单参数 expected(错误固定 std::string), 与 C++17 的 Result1 风格一致
+template<typename T>
+using expected = std::expected<T, std::string>;
+// 直接复用 std::unexpected(同一实体, 避免与 using namespace std 歧义)
+using std::unexpected;
+}
 #else
 //---------- C++17/20: 使用 fmt / gsl / 内置 Expected ----------
 #  include <fmt/format.h>
 #  include <fmt/chrono.h>
 #  include <gsl/span>
-#  include "Expected.h"
+#  include "Result1.h"
 #  define fmt_ns  fmt
 #  define span_ns gsl
 #  define exp_ns  ycore

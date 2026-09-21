@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include<windows.h>
 #include"../../Encoding.h"
 #include<mmdeviceapi.h>
@@ -38,7 +38,7 @@ STAType WASAPICapture::initSTA(std::string_view id)
 	return fu.get();
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::init(std::string_view id)
+TResult<void> WASAPICapture::init(std::string_view id)
 {
 
 	IMMDeviceCollection* pCollection;
@@ -128,10 +128,10 @@ exp_ns::expected<void, std::string> WASAPICapture::init(std::string_view id)
 	}
 
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::release()
+TResult<void> WASAPICapture::release()
 {
 	if (this->pCaptureClient)
 	{
@@ -152,13 +152,13 @@ exp_ns::expected<void, std::string> WASAPICapture::release()
 		this->pDevice = nullptr;
 	}
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
 
 
 
-exp_ns::expected<void, std::string> WASAPICapture::doCapture()
+TResult<void> WASAPICapture::doCapture()
 {
 	try
 	{
@@ -278,10 +278,10 @@ STAType WASAPICapture::readNextPacket()
 	}
 
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _waveWriter, int maxRecordMills)
+TResult<void> WASAPICapture::captureAsync(WaveWriter* _waveWriter, int maxRecordMills)
 {
 	if (this->captureState == CaptureState::Starting || this->captureState == CaptureState::Capturing)
 	{
@@ -310,10 +310,10 @@ exp_ns::expected<void, std::string> WASAPICapture::captureAsync(WaveWriter* _wav
 	
 
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::waitCaptureDone()
+TResult<void> WASAPICapture::waitCaptureDone()
 {
 	if (this->captureFuture.valid())
 	{
@@ -325,17 +325,17 @@ exp_ns::expected<void, std::string> WASAPICapture::waitCaptureDone()
 	}
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::stopCapture()
+TResult<void> WASAPICapture::stopCapture()
 {
 	if (this->captureState != CaptureState::Stopped && this->captureState != CaptureState::Stopping)
 	{
 		this->captureState = CaptureState::Stopping; //标记为停止中
 		SetEvent(this->hExit);  //触发退出事件
 	}
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPICapture::capture(WaveWriter* waveWriter, int maxRecordMills)
+TResult<void> WASAPICapture::capture(WaveWriter* waveWriter, int maxRecordMills)
 {
 	auto result = this->captureAsync(waveWriter, maxRecordMills);
 	if (!result)

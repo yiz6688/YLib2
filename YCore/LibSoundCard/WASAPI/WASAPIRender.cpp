@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include<windows.h>
 #include"../../Encoding.h"
 #include<mmdeviceapi.h>
@@ -40,7 +40,7 @@ STAType WASAPIRender::initSTA(std::string_view id)
 	return fu.get();
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::init(std::string_view id)
+TResult<void> WASAPIRender::init(std::string_view id)
 {
 
 	IMMDeviceCollection* pCollection;
@@ -129,10 +129,10 @@ exp_ns::expected<void, std::string> WASAPIRender::init(std::string_view id)
 	}
 
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::release()
+TResult<void> WASAPIRender::release()
 {
 	if (this->pRenderClient)
 	{
@@ -153,7 +153,7 @@ exp_ns::expected<void, std::string> WASAPIRender::release()
 		this->pDevice = nullptr;
 	}
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
 
@@ -278,7 +278,7 @@ STAType WASAPIRender::fillBuffer(int frameSize)
 	return STAType();
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveReader)
+TResult<void> WASAPIRender::playAsync(WaveReader* waveReader)
 {
 	if (this->playbackState == PlaybackState::Starting || this->playbackState == PlaybackState::Playing)
 	{
@@ -305,10 +305,10 @@ exp_ns::expected<void, std::string> WASAPIRender::playAsync(WaveReader* waveRead
 
 
 
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::waitPlayDone()
+TResult<void> WASAPIRender::waitPlayDone()
 {
 	if (this->renderFuture.valid())
 	{
@@ -320,17 +320,17 @@ exp_ns::expected<void, std::string> WASAPIRender::waitPlayDone()
 	}
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::stopPlay()
+TResult<void> WASAPIRender::stopPlay()
 {
 	if (this->playbackState != PlaybackState::Stopped && this->playbackState != PlaybackState::Stopping)
 	{
 		this->playbackState = PlaybackState::Stopping; //标记为停止中
 		SetEvent(this->hExit);  //触发退出事件
 	}
-	return exp_ns::expected<void, std::string>();
+	return TResult<void>();
 }
 
-exp_ns::expected<void, std::string> WASAPIRender::play(WaveReader* waveReader)
+TResult<void> WASAPIRender::play(WaveReader* waveReader)
 {
 	auto result = this->playAsync(waveReader);
 	if (!result)

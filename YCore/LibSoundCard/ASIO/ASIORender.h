@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
+#include"TResult.h"
 #include"../IRender.h"
 #include"../../WaveBuffer.h"
 #include<vector>
@@ -26,13 +27,13 @@ public:
 
 
 public:
-    exp_ns::expected<void, std::string> playAsync(WaveReader* waveReader) override;
+    TResult<void> playAsync(WaveReader* waveReader) override;
 
-    exp_ns::expected<void, std::string> waitPlayDone() override;
+    TResult<void> waitPlayDone() override;
 
-    exp_ns::expected<void, std::string> stopPlay() override;
+    TResult<void> stopPlay() override;
 
-    exp_ns::expected<void, std::string> play(WaveReader* waveReader) override;
+    TResult<void> play(WaveReader* waveReader) override;
 
     PlaybackState getPlaybackState() override
     {

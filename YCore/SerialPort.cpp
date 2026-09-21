@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include "SerialPort.h"
 #include<Windows.h>
 
@@ -14,7 +14,7 @@ SerialPort::SerialPort(const std::string portName)
 SerialPort::~SerialPort()
 {}
 
-exp_ns::expected<void, std::string> SerialPort::openPort()
+TResult<void> SerialPort::openPort()
 {
 	string name = "\\\\.\\" + string(portName);
 	HANDLE handle = CreateFileA(name.c_str(),
@@ -59,22 +59,22 @@ void SerialPort::closePort()
 	return ;
 }
 
-exp_ns::expected<void, std::string> SerialPort::setBaudRate(int baudRate)
+TResult<void> SerialPort::setBaudRate(int baudRate)
 {
 	return {};
 }
 
-exp_ns::expected<int, std::string> SerialPort::writeBytes(const unsigned char* data, int length, int offset, int writeSize)
+TResult<int> SerialPort::writeBytes(const unsigned char* data, int length, int offset, int writeSize)
 {
 	return 0;
 }
 
-exp_ns::expected<int, std::string> SerialPort::readBytes(unsigned char* buffer, int length, int offset, int readSize)
+TResult<int> SerialPort::readBytes(unsigned char* buffer, int length, int offset, int readSize)
 {
 	return 0;
 }
 
-exp_ns::expected<void, std::string> SerialPort::setTimeOut(int readTimeout, int writeTimeout)
+TResult<void> SerialPort::setTimeOut(int readTimeout, int writeTimeout)
 {
 	//GetCommTimeouts
 
@@ -121,7 +121,7 @@ exp_ns::expected<void, std::string> SerialPort::setTimeOut(int readTimeout, int 
 	return {};
 }
 
-exp_ns::expected<void, std::string> SerialPort::setbufferSize(int inSize, int outSize)
+TResult<void> SerialPort::setbufferSize(int inSize, int outSize)
 {
 
 	//PurgeComm
@@ -131,7 +131,7 @@ exp_ns::expected<void, std::string> SerialPort::setbufferSize(int inSize, int ou
 	return {};
 }
 
-exp_ns::expected<void, std::string> SerialPort::setParam(int baudRate, int byteSize, int stopBits, int parity)
+TResult<void> SerialPort::setParam(int baudRate, int byteSize, int stopBits, int parity)
 {
 
 
@@ -169,19 +169,19 @@ exp_ns::expected<void, std::string> SerialPort::setParam(int baudRate, int byteS
 	return {};
 }
 
-exp_ns::expected<void, std::string> SerialPort::setDTR(int value)
+TResult<void> SerialPort::setDTR(int value)
 {
 	EscapeCommFunction(this->hCom, value ? SETDTR : CLRDTR);
 	return {};
 }
 
-exp_ns::expected<void, std::string> SerialPort::setRTS(int value)
+TResult<void> SerialPort::setRTS(int value)
 {
 	EscapeCommFunction(this->hCom, value ? SETRTS : CLRRTS);
 	return {};
 }
 
-exp_ns::expected<int, std::string> SerialPort::readableBytes()
+TResult<int> SerialPort::readableBytes()
 {
 
 	//GetCommModemStatus  读取信号线状态DTR DSR等

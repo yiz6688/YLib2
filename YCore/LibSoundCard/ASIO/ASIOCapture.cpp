@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include "ASIOCapture.h"
 #include"ASIODriver.h"
 #include"../../Utils.h"
@@ -31,22 +31,22 @@ WaveBuffer* ASIOCapture::getBuffer(int channelIndex)
 
 //底层架构已改动: 音频交换统一走 getBuffer(每通道 WaveBuffer), 文件级录制由上层基于 getBuffer 实现,
 //WaveWriter 流式录制接口不再支持, 启动即失败以尽早暴露误用
-exp_ns::expected<void, std::string> ASIOCapture::captureAsync(WaveWriter * waveWriter, int maxRecordMills)
+TResult<void> ASIOCapture::captureAsync(WaveWriter * waveWriter, int maxRecordMills)
 {
     return exp_ns::unexpected("架构已改动: 请通过 getBuffer 读取通道缓冲, WaveWriter 接口不再支持");
 }
 
-exp_ns::expected<void, std::string> ASIOCapture::waitCaptureDone()
+TResult<void> ASIOCapture::waitCaptureDone()
 {
     return exp_ns::unexpected("架构已改动: 请通过 getBuffer 读取通道缓冲, 无流式录制任务");
 }
 
-exp_ns::expected<void, std::string> ASIOCapture::stopCapture()
+TResult<void> ASIOCapture::stopCapture()
 {
     return exp_ns::unexpected("架构已改动: 请通过 getBuffer 读取通道缓冲, 无流式录制任务");
 }
 
-exp_ns::expected<void, std::string> ASIOCapture::capture(WaveWriter* waveWriter, int maxRecordMills)
+TResult<void> ASIOCapture::capture(WaveWriter* waveWriter, int maxRecordMills)
 {
     return exp_ns::unexpected("架构已改动: 请通过 getBuffer 读取通道缓冲, WaveWriter 接口不再支持");
 }

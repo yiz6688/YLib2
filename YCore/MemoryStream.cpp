@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 #include "MemoryStream.h"
 #include <stdexcept>
 #include <algorithm>
@@ -209,7 +209,7 @@ long MemoryStream::seek(long offset, SeekOrigin origin)
 	return this->_position - this->_origin;
 }
 
-exp_ns::expected<void, std::string> MemoryStream::inner_close()
+TResult<void> MemoryStream::inner_close()
 {
 	this->_isOpen = false;
 	this->_readable = false;

@@ -1,4 +1,4 @@
-#include"base_config.hpp"
+﻿#include"base_config.hpp"
 #include"ASIODriver.h"
 #include"asiosdk/asio.h"
 #include<array>
@@ -105,7 +105,7 @@ static mutex gMTX;
 
 
 ASIODriver::ASIODriver(ASIOCallbacks* callbacks, CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
-    : asioID(clsid), exclusiveMode(exclusiveMode)
+    : exclusiveMode(exclusiveMode), asioID(clsid)
 {
     //notifyMills/maxDelayMills 有效范围由 ASIODevice 构造函数校验(超出抛异常)
     this->pAsioDevice = std::make_unique<ASIODevice>(callbacks, clsid, notifyMills, maxDelayMills);
@@ -161,7 +161,7 @@ ASIODriver::~ASIODriver()
     }
 }
 
-exp_ns::expected<ASIORender*, std::string> ASIODriver::createRender(int channelMask, int bufferMills)
+TResult<ASIORender*> ASIODriver::createRender(int channelMask, int bufferMills)
 {
     if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
     {
@@ -199,7 +199,7 @@ exp_ns::expected<ASIORender*, std::string> ASIODriver::createRender(int channelM
     return pRender;
 }
 
-exp_ns::expected<ASIOCapture*, std::string> ASIODriver::createCapture(int channelMask, int bufferMills)
+TResult<ASIOCapture*> ASIODriver::createCapture(int channelMask, int bufferMills)
 {
     if (this->pAsioDevice == nullptr || !this->pAsioDevice->bufferReady)
     {
@@ -1064,7 +1064,7 @@ TResult<void> ASIODriver::Release()
     return result;
 }
 
-exp_ns::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
+TResult<ASIODriver*> ASIODriver::createDriver(CLSID clsid, int notifyMills, int maxDelayMills, bool exclusiveMode)
 {
     lock_guard<mutex> lg(gMTX);
 
@@ -1110,7 +1110,7 @@ exp_ns::expected<ASIODriver*, std::string> ASIODriver::createDriver(CLSID clsid,
     return entity.pASIODriver.get();
 }
 
-exp_ns::expected<void, std::string> ASIODriver::releaseDriver(ASIODriver* driver)
+TResult<void> ASIODriver::releaseDriver(ASIODriver* driver)
 {
     if (driver == nullptr)
     {

@@ -157,7 +157,7 @@ void STAWorker::UnitTest()
             println("开始执行func1");
             this_thread::sleep_for(chrono::seconds(2));
             println("func1执行结束");
-            return expected<void, string>();
+            return STAType();
         });
 
         vec.push_back(std::move(fu1));
@@ -166,7 +166,7 @@ void STAWorker::UnitTest()
             println("执行func2");
             this_thread::sleep_for(chrono::seconds(3));
             println("func2执行结束");
-            return expected<void, string>();
+            return STAType();
         });
 
         vec.push_back(std::move(fu2));

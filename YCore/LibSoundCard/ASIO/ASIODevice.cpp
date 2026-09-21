@@ -1,4 +1,4 @@
-﻿#include"base_config.hpp"
+#include"base_config.hpp"
 /*
 Asio驱动的具体实现
 
@@ -110,9 +110,9 @@ ASIODevice::~ASIODevice()
  * 1、如果驱动不存在, 直接进行加载
  * 2、如果驱动已存在, 检测是否失效。确认失效后释放旧资源后重新加载。
  */
-exp_ns::expected<void, std::string> ASIODevice::loadInstance()
+TResult<void> ASIODevice::loadInstance()
 {
-    exp_ns::expected<void, std::string> result;
+    TResult<void> result;
     if (this->iasio != nullptr)
     {
         result = this->getSampleRate();
@@ -149,7 +149,7 @@ exp_ns::expected<void, std::string> ASIODevice::loadInstance()
 /// 如果不支持48k采样率, 就使用默认采样率加载驱动。
 /// 加载完毕后相关参数保存在成员变量中。
 /// </summary>
-exp_ns::expected<void, std::string> ASIODevice::deviceInit()
+TResult<void> ASIODevice::deviceInit()
 {
     ASIOError error;
     string errInfo = "";
@@ -243,7 +243,7 @@ exp_ns::expected<void, std::string> ASIODevice::deviceInit()
     return {};
 }
 
-exp_ns::expected<void, std::string> ASIODevice::deviceRelease()
+TResult<void> ASIODevice::deviceRelease()
 {
     if (this->iasio != nullptr)
     {
@@ -483,7 +483,7 @@ TResult<void> ASIODevice::createBuffer()
 /// <summary>
 /// 打开驱动, 如驱动已打开且资源已创建就不重复执行, 否则重新构建资源。
 /// </summary>
-exp_ns::expected<void, std::string> ASIODevice::driverOpen(int _sampleRate)
+TResult<void> ASIODevice::driverOpen(int _sampleRate)
 {
     //需要加载驱动的标志位
     bool flag = false;

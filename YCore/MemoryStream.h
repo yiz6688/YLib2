@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
+#include"TResult.h"
 #include"Stream.h"
 #include<memory>
 
@@ -31,7 +32,7 @@ public:
 	long seek(long offset, SeekOrigin origin) override;
 
 protected:
-	exp_ns::expected<void, std::string> inner_close() override;
+	TResult<void> inner_close() override;
 
 	long basic_read(char* buffer, int size, int offset, int count) override;
 

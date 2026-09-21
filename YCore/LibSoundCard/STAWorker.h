@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
+#include"TResult.h"
 #include<condition_variable>
 #include<queue>
 #include<future>
@@ -9,7 +10,7 @@
 #include<functional>
 #include<windows.h>
 
-using STAType = exp_ns::expected<void, std::string>;
+using STAType = TResult<void>;
 using STAFunc = std::function<STAType()>;
 using STATask = std::packaged_task<STAType()>;
 using STAFuture = std::future<STAType>;

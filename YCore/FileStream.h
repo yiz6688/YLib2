@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include"base_config.hpp"
 #include"Stream.h"
 #include<string_view>
@@ -91,7 +91,7 @@ public:
 
 protected:
 	//底层关闭实现(尽力 flush + 关句柄), 返回 expected; close() 抛异常, 析构/移动赋值静默
-	exp_ns::expected<void, std::string> inner_close() override;
+	TResult<void> inner_close() override;
 
 	long basic_read(char* data, int size, int offset, int count) override;
 
