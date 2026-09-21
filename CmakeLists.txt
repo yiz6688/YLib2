@@ -5,10 +5,9 @@ cmake_minimum_required(VERSION 4.0)
 project(YCore)
 
 # ===== C++ 标准选择开关 =====
-# 另一台只支持 C++17 的机器: 把下面的开关改为 ON
-# C++17 模式下, 库内部用 fmt/gsl/内置Expected 替代标准库 expected/format/print/span
-# (base_config.hpp 按语言标准自动切换 fmt_ns/span_ns/exp_ns)
-option(YCORE_USE_CPP17 "使用 C++17 兼容模式(用 fmt/gsl 替代标准库 expected/format/print/span)" OFF)
+# 默认 C++17 兼容模式: 用 fmt/gsl/内置Expected 替代标准库 expected/format/print/span
+# 编译器支持 C++23 时, 可把下面的开关改为 OFF 启用 C++23 (标准库 expected/format/print/span)
+option(YCORE_USE_CPP17 "使用 C++17 兼容模式(用 fmt/gsl 替代标准库 expected/format/print/span)" ON)
 if(YCORE_USE_CPP17)
     set(CMAKE_CXX_STANDARD 17)
 else()
@@ -66,7 +65,8 @@ add_subdirectory(./YCore/third_party/fmt)
 #包含gsl库
 add_subdirectory(./YCore/third_party/GSL)
 
-target_link_libraries(${LIBNAME} PRIVATE fmt::fmt Microsoft.GSL::GSL)
+#base_config.hpp 是PUBLIC头文件, 消费者也要用 fmt/gsl, 必须PUBLIC传播include目录
+target_link_libraries(${LIBNAME} PUBLIC fmt::fmt Microsoft.GSL::GSL)
 
 
 add_subdirectory(Test)

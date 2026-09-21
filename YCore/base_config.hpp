@@ -34,9 +34,8 @@
 #  define exp_ns  std
 #else
 //---------- C++17/20: 使用 fmt / gsl / 内置 Expected ----------
-#  include <fmt/core.h>
 #  include <fmt/format.h>
-#  include <fmt/ostream.h>
+#  include <fmt/chrono.h>
 #  include <gsl/span>
 #  include "Expected.h"
 #  define fmt_ns  fmt
